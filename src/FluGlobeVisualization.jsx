@@ -29,6 +29,7 @@ const FluGlobeVisualization = () => {
   const [hostFilter, setHostFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [timeRange, setTimeRange] = useState('all');
+  const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
 
   const width = 620;
@@ -285,6 +286,90 @@ const FluGlobeVisualization = () => {
     return true;
   });
 
+  const aggregatedOutbreaks = useMemo(() => {
+    const groups = new Map();
+    const severityOrder = { low: 1, medium: 2, high: 3 };
+
+    for (const item of filteredOutbreaks) {
+      const lat = Number(item.lat);
+      const lng = Number(item.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+      const key = `${lat.toFixed(3)}|${lng.toFixed(3)}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          lat,
+          lng,
+          country: item.country,
+          cases: 0,
+          detections: 0,
+          eventCount: 0,
+          typeCounts: {},
+          virusCounts: {},
+          latestDate: null,
+          latestDateLabel: item.date,
+          topSeverity: item.severity || 'low',
+          sources: new Set()
+        });
+      }
+
+      const entry = groups.get(key);
+      const cases = Number(item.cases) || 0;
+      const detections = Number(item.detections) || 1;
+      const eventDate = parseOutbreakDate(item);
+
+      entry.cases += cases;
+      entry.detections += detections;
+      entry.eventCount += 1;
+      entry.typeCounts[item.type] = (entry.typeCounts[item.type] || 0) + 1;
+      entry.virusCounts[item.virus] = (entry.virusCounts[item.virus] || 0) + 1;
+      if (item.source) entry.sources.add(item.source);
+
+      if (!entry.latestDate || (eventDate && eventDate > entry.latestDate)) {
+        entry.latestDate = eventDate;
+        entry.latestDateLabel = item.date;
+      }
+
+      const currentRank = severityOrder[entry.topSeverity] || 1;
+      const nextRank = severityOrder[item.severity] || 1;
+      if (nextRank > currentRank) {
+        entry.topSeverity = item.severity;
+      }
+    }
+
+    const dominantKey = (counts, fallback) => {
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      return sorted[0]?.[0] || fallback;
+    };
+
+    return Array.from(groups.values())
+      .map((entry, idx) => ({
+        id: `location-${idx + 1}`,
+        lat: entry.lat,
+        lng: entry.lng,
+        country: entry.country,
+        cases: Math.round(entry.cases),
+        date: entry.latestDateLabel,
+        severity: entry.topSeverity,
+        type: dominantKey(entry.typeCounts, 'wild'),
+        virus: dominantKey(entry.virusCounts, 'H5N1'),
+        source: entry.sources.size > 1
+          ? `${entry.sources.size} sources`
+          : (Array.from(entry.sources)[0] || 'Source unavailable'),
+        detections: entry.detections,
+        eventCount: entry.eventCount,
+        isAggregated: true
+      }))
+      .sort((a, b) => b.cases - a.cases);
+  }, [filteredOutbreaks]);
+
+  const outbreakMarkers = outbreakView === 'location' ? aggregatedOutbreaks : filteredOutbreaks;
+
+  useEffect(() => {
+    setHoveredOutbreak(null);
+  }, [outbreakView, filteredOutbreaks.length]);
+
   const stats = useMemo(() => {
     if (liveStats) return liveStats;
 
@@ -369,6 +454,24 @@ const FluGlobeVisualization = () => {
       case 'human': return '👤';
       default: return '🦠';
     }
+  };
+
+  const getTypeColor = (type) => {
+    switch (type) {
+      case 'poultry': return '#ff6b6b';
+      case 'wild': return '#14b8a6';
+      case 'dairy': return '#06b6d4';
+      case 'human': return '#a855f7';
+      default: return '#ff9500';
+    }
+  };
+
+  const getOutbreakColor = (outbreak) => {
+    if (virusFilter !== 'all') return getVirusColor(outbreak.virus);
+    if (outbreakView === 'location' && hostFilter === 'all' && severityFilter === 'all') {
+      return getTypeColor(outbreak.type);
+    }
+    return getSeverityColor(outbreak.severity);
   };
 
   // Mouse handlers
@@ -594,6 +697,18 @@ const FluGlobeVisualization = () => {
             </div>
           </div>
 
+          {/* Display Mode */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[['location', 'By Location'], ['events', 'Raw Events']].map(([value, label]) => (
+                <button key={value} onClick={() => setOutbreakView(value)} style={btnStyle(outbreakView === value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Labels Toggle + Data Refresh */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
             <button
@@ -614,7 +729,8 @@ const FluGlobeVisualization = () => {
 
         {/* Active filters summary */}
         <div style={{ marginTop: '8px', fontSize: '0.55rem', color: '#4b5563' }}>
-          Showing {filteredOutbreaks.length} of {displayedOutbreakData.length} outbreaks
+          Showing {outbreakMarkers.length} {outbreakView === 'location' ? 'locations' : 'events'}
+          {' '}from {filteredOutbreaks.length} filtered outbreaks
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
           {severityFilter !== 'all' && <span style={{ color: getSeverityColor(severityFilter) }}> • {severityFilter} severity</span>}
@@ -823,7 +939,7 @@ const FluGlobeVisualization = () => {
             })}
 
             {/* Outbreaks */}
-            {showOutbreaks && filteredOutbreaks.map((outbreak) => {
+            {showOutbreaks && outbreakMarkers.map((outbreak) => {
               const coords = [outbreak.lng, outbreak.lat];
               if (!isVisible(coords)) return null;
               const pt = projection(coords);
@@ -831,7 +947,7 @@ const FluGlobeVisualization = () => {
 
               const r = getOutbreakRadius(outbreak);
               const pulse = 1 + Math.sin((animationPhase * 0.4) * Math.PI / 180) * 0.2;
-              const color = virusFilter !== 'all' ? getVirusColor(outbreak.virus) : getSeverityColor(outbreak.severity);
+              const color = getOutbreakColor(outbreak);
               const hovered = hoveredOutbreak?.id === outbreak.id;
 
               return (
@@ -872,17 +988,23 @@ const FluGlobeVisualization = () => {
               if (!pt) return null;
               const tx = pt[0] > width - 170 ? pt[0] - 165 : pt[0] + 15;
               const ty = pt[1] > height - 100 ? pt[1] - 95 : pt[1];
+              const tooltipStroke = getOutbreakColor(hoveredOutbreak);
+              const tooltipHeight = hoveredOutbreak.isAggregated ? 116 : 102;
+              const eventLabel = hoveredOutbreak.isAggregated
+                ? `${hoveredOutbreak.eventCount} merged events`
+                : `${hoveredOutbreak.detections || 1} detections`;
 
               return (
                 <g transform={`translate(${tx},${ty})`}>
-                  <rect x="0" y="0" width="155" height="102" rx="6" fill="rgba(8,12,20,0.95)" stroke={getVirusColor(hoveredOutbreak.virus)} strokeWidth="1.5" />
+                  <rect x="0" y="0" width="155" height={tooltipHeight} rx="6" fill="rgba(8,12,20,0.95)" stroke={tooltipStroke} strokeWidth="1.5" />
                   <text x="10" y="18" fill="#fff" fontSize="11" fontWeight="600">{hoveredOutbreak.country}</text>
                   <text x="10" y="34" fill={getVirusColor(hoveredOutbreak.virus)} fontSize="10" fontWeight="600">{hoveredOutbreak.virus}</text>
                   <text x="50" y="34" fill="#9ca3af" fontSize="9">{getTypeIcon(hoveredOutbreak.type)} {hoveredOutbreak.type}</text>
                   <text x="10" y="52" fill="#9ca3af" fontSize="9">📅 {hoveredOutbreak.date}</text>
                   <text x="10" y="68" fill={getSeverityColor(hoveredOutbreak.severity)} fontSize="10" fontWeight="500">{hoveredOutbreak.cases} cases</text>
-                  <text x="10" y="82" fill="#6b7280" fontSize="8">Severity: {hoveredOutbreak.severity.toUpperCase()}</text>
-                  <text x="10" y="95" fill="#6b7280" fontSize="7">{hoveredOutbreak.source || 'Source unavailable'}</text>
+                  <text x="10" y="82" fill="#6b7280" fontSize="8">{eventLabel}</text>
+                  <text x="10" y="94" fill="#6b7280" fontSize="8">Severity: {hoveredOutbreak.severity.toUpperCase()}</text>
+                  <text x="10" y="107" fill="#6b7280" fontSize="7">{hoveredOutbreak.source || 'Source unavailable'}</text>
                 </g>
               );
             })()}
