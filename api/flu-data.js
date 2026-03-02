@@ -31,6 +31,12 @@ const COUNTRY_ALIASES = {
 const DEFAULT_LOOKBACK_DAYS = 365;
 const DEFAULT_MAX_POINTS = 500;
 const SERVER_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const REQUEST_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36',
+  Accept: 'text/csv,text/plain,application/json,*/*',
+  Referer: 'https://www.aphis.usda.gov/'
+};
 
 let memoryCache = {
   createdAt: 0,
@@ -112,6 +118,47 @@ const classifySeverity = (type, cases) => {
 
 const roundCoord = (value) => Math.round(value * 1000) / 1000;
 
+const selectBalancedEntries = (entries, maxPoints) => {
+  if (entries.length <= maxPoints) return entries;
+
+  const typeWeights = {
+    poultry: 0.45,
+    wild: 0.2,
+    dairy: 0.2,
+    human: 0.15
+  };
+
+  const caps = Object.fromEntries(
+    Object.entries(typeWeights).map(([type, weight]) => [type, Math.max(1, Math.floor(maxPoints * weight))])
+  );
+
+  const selected = [];
+  const selectedIds = new Set();
+  const selectedByType = { poultry: 0, wild: 0, dairy: 0, human: 0 };
+
+  for (const entry of entries) {
+    if (selected.length >= maxPoints) break;
+    const type = entry.type || 'wild';
+    const cap = caps[type] ?? Math.max(1, Math.floor(maxPoints * 0.1));
+    if (selectedByType[type] >= cap) continue;
+
+    selected.push(entry);
+    selectedIds.add(entry._id);
+    selectedByType[type] = (selectedByType[type] || 0) + 1;
+  }
+
+  if (selected.length < maxPoints) {
+    for (const entry of entries) {
+      if (selected.length >= maxPoints) break;
+      if (selectedIds.has(entry._id)) continue;
+      selected.push(entry);
+      selectedIds.add(entry._id);
+    }
+  }
+
+  return selected;
+};
+
 const getQueryNumber = (value, fallback, min, max) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -120,9 +167,7 @@ const getQueryNumber = (value, fallback, min, max) => {
 
 const fetchText = async (url) => {
   const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'FluGlobe/1.0'
-    }
+    headers: REQUEST_HEADERS
   });
 
   if (!response.ok) {
@@ -137,9 +182,7 @@ const fetchText = async (url) => {
 
 const fetchJson = async (url) => {
   const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'FluGlobe/1.0'
-    }
+    headers: REQUEST_HEADERS
   });
 
   if (!response.ok) {
@@ -282,7 +325,9 @@ const buildPayload = async (lookbackDays, maxPoints) => {
       );
     }
   } else {
-    warnings.push('USDA wild birds feed unavailable.');
+    warnings.push(
+      `USDA wild birds feed unavailable (${wildRes.reason?.message || 'request failed'}).`
+    );
   }
 
   if (mammalsRes.status === 'fulfilled') {
@@ -310,7 +355,9 @@ const buildPayload = async (lookbackDays, maxPoints) => {
       );
     }
   } else {
-    warnings.push('USDA mammals feed unavailable.');
+    warnings.push(
+      `USDA mammals feed unavailable (${mammalsRes.reason?.message || 'request failed'}).`
+    );
   }
 
   if (poultryRes.status === 'fulfilled') {
@@ -340,7 +387,9 @@ const buildPayload = async (lookbackDays, maxPoints) => {
       );
     }
   } else {
-    warnings.push('USDA poultry feed unavailable.');
+    warnings.push(
+      `USDA poultry feed unavailable (${poultryRes.reason?.message || 'request failed'}).`
+    );
   }
 
   if (humanRes.status === 'fulfilled') {
@@ -376,7 +425,9 @@ const buildPayload = async (lookbackDays, maxPoints) => {
       );
     }
   } else {
-    warnings.push('OWID human cases feed unavailable.');
+    warnings.push(
+      `OWID human cases feed unavailable (${humanRes.reason?.message || 'request failed'}).`
+    );
   }
 
   const grouped = new Map();
@@ -413,14 +464,17 @@ const buildPayload = async (lookbackDays, maxPoints) => {
     if (row.dateObj > entry.dateObj) entry.dateObj = row.dateObj;
   }
 
-  const outbreaks = Array.from(grouped.values())
+  const sortedGroupedEntries = Array.from(grouped.values())
     .sort((a, b) => {
       const byDate = b.dateObj - a.dateObj;
       if (byDate !== 0) return byDate;
       return b.cases - a.cases;
     })
-    .slice(0, maxPoints)
-    .map((entry, index) => ({
+    .map((entry, index) => ({ ...entry, _id: index + 1 }));
+
+  const limitedEntries = selectBalancedEntries(sortedGroupedEntries, maxPoints);
+
+  const outbreaks = limitedEntries.map((entry, index) => ({
       id: index + 1,
       lat: roundCoord(entry.lat),
       lng: roundCoord(entry.lng),
@@ -436,20 +490,21 @@ const buildPayload = async (lookbackDays, maxPoints) => {
       detections: entry.detections
     }));
 
-  const totalCases = outbreaks.reduce((sum, row) => sum + row.cases, 0);
+  const totalCases = sortedGroupedEntries.reduce((sum, row) => sum + Math.round(row.cases), 0);
   const normalizedCountries = new Set(
-    outbreaks.map((row) => (row.country.startsWith('USA - ') ? 'USA' : row.country))
+    sortedGroupedEntries.map((row) => (row.country.startsWith('USA - ') ? 'USA' : row.country))
   );
 
-  const usLivestockCases = outbreaks
+  const usLivestockCases = sortedGroupedEntries
     .filter((row) => row.country.startsWith('USA - ') && (row.type === 'poultry' || row.type === 'dairy'))
-    .reduce((sum, row) => sum + row.cases, 0);
+    .reduce((sum, row) => sum + Math.round(row.cases), 0);
 
-  const humanCases = outbreaks
+  const humanCases = sortedGroupedEntries
     .filter((row) => row.type === 'human')
-    .reduce((sum, row) => sum + row.cases, 0);
+    .reduce((sum, row) => sum + Math.round(row.cases), 0);
 
-  const latestEventDate = outbreaks.length > 0 ? outbreaks[0].timestamp : null;
+  const latestEventDate =
+    sortedGroupedEntries.length > 0 ? sortedGroupedEntries[0].dateObj.toISOString() : null;
 
   return {
     generatedAt: new Date().toISOString(),
