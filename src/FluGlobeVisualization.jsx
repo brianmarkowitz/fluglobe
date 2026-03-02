@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as d3 from 'd3';
 
 const FluGlobeVisualization = () => {
+  const BASE_GLOBE_SCALE = 295;
+  const MIN_ZOOM_LEVEL = 1;
+  const MAX_ZOOM_LEVEL = 3.25;
   const LIVE_DATA_CACHE_KEY = 'fluglobe-live-data-v1';
   const LIVE_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -14,6 +17,7 @@ const FluGlobeVisualization = () => {
   const [showOutbreaks, setShowOutbreaks] = useState(true);
   const [animationPhase, setAnimationPhase] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveOutbreakData, setLiveOutbreakData] = useState([]);
@@ -31,10 +35,16 @@ const FluGlobeVisualization = () => {
   const [timeRange, setTimeRange] = useState('all');
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
+  const pinchZoomRef = useRef(null);
 
   const width = 620;
   const height = 620;
   const sensitivity = 0.4;
+
+  const clampZoom = useCallback(
+    (nextZoom) => Math.min(MAX_ZOOM_LEVEL, Math.max(MIN_ZOOM_LEVEL, nextZoom)),
+    []
+  );
 
   // Load world countries GeoJSON
   useEffect(() => {
@@ -412,9 +422,15 @@ const FluGlobeVisualization = () => {
     return () => clearInterval(interval);
   }, [autoRotate, isDragging]);
 
+  useEffect(() => {
+    if (zoomLevel > 1.01 && autoRotate) {
+      setAutoRotate(false);
+    }
+  }, [zoomLevel, autoRotate]);
+
   // Projection
   const projection = d3.geoOrthographic()
-    .scale(295)
+    .scale(BASE_GLOBE_SCALE * zoomLevel)
     .rotate(rotation)
     .translate([width / 2, height / 2]);
 
@@ -493,6 +509,83 @@ const FluGlobeVisualization = () => {
   const handleMouseUp = () => {
     setIsDragging(false);
     setDragStart(null);
+  };
+
+  const updateZoomLevel = (nextZoom) => {
+    const clamped = clampZoom(nextZoom);
+    setZoomLevel(clamped);
+    if (clamped > 1.01) {
+      setAutoRotate(false);
+    }
+  };
+
+  const getRelativePoint = (clientX, clientY, element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const getTouchDistance = (touchA, touchB) => {
+    const dx = touchA.clientX - touchB.clientX;
+    const dy = touchA.clientY - touchB.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0016);
+    updateZoomLevel(zoomLevel * factor);
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      pinchZoomRef.current = {
+        startDistance: distance,
+        startZoom: zoomLevel
+      };
+      setIsDragging(false);
+      setDragStart(null);
+      setAutoRotate(false);
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const point = getRelativePoint(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
+      setIsDragging(true);
+      setAutoRotate(false);
+      setDragStart({ x: point.x, y: point.y, rotation: [...rotation] });
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && pinchZoomRef.current) {
+      e.preventDefault();
+      const distance = getTouchDistance(e.touches[0], e.touches[1]);
+      if (pinchZoomRef.current.startDistance > 0) {
+        const ratio = distance / pinchZoomRef.current.startDistance;
+        updateZoomLevel(pinchZoomRef.current.startZoom * ratio);
+      }
+      return;
+    }
+
+    if (e.touches.length === 1 && isDragging && dragStart) {
+      e.preventDefault();
+      const point = getRelativePoint(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
+      const dx = (point.x - dragStart.x) * sensitivity;
+      const dy = (point.y - dragStart.y) * sensitivity;
+      setRotation([dragStart.rotation[0] - dx, Math.max(-60, Math.min(60, dragStart.rotation[1] + dy)), 0]);
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length < 2) {
+      pinchZoomRef.current = null;
+    }
+
+    if (e.touches.length === 0) {
+      setIsDragging(false);
+      setDragStart(null);
+    }
   };
 
   // Create flyway path
@@ -596,6 +689,7 @@ const FluGlobeVisualization = () => {
 
   const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
   const standardNumber = new Intl.NumberFormat('en-US');
+  const isZoomedIn = zoomLevel > 1.01;
   const formattedUpdatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : null;
@@ -701,7 +795,7 @@ const FluGlobeVisualization = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {[['location', 'By Location'], ['events', 'Raw Events']].map(([value, label]) => (
+              {[['location', 'Summary'], ['events', 'Detailed']].map(([value, label]) => (
                 <button key={value} onClick={() => setOutbreakView(value)} style={btnStyle(outbreakView === value)}>
                   {label}
                 </button>
@@ -731,6 +825,8 @@ const FluGlobeVisualization = () => {
         <div style={{ marginTop: '8px', fontSize: '0.55rem', color: '#4b5563' }}>
           Showing {outbreakMarkers.length} {outbreakView === 'location' ? 'locations' : 'events'}
           {' '}from {filteredOutbreaks.length} filtered outbreaks
+          <span> • {outbreakView === 'location' ? 'summary mode (merged by location)' : 'detailed mode (every event)'}</span>
+          <span> • Zoom {Math.round(zoomLevel * 100)}%</span>
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
           {severityFilter !== 'all' && <span style={{ color: getSeverityColor(severityFilter) }}> • {severityFilter} severity</span>}
@@ -773,17 +869,25 @@ const FluGlobeVisualization = () => {
           <svg
             width={width}
             height={height}
-            style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'block' }}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'block', touchAction: 'none' }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onWheel={handleWheel}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
             <defs>
               <radialGradient id="oceanGrad" cx="30%" cy="30%">
                 <stop offset="0%" stopColor="#1e3a50" />
                 <stop offset="100%" stopColor="#0a1520" />
               </radialGradient>
+
+              <clipPath id="globeClip">
+                <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} />
+              </clipPath>
               
               {/* Enhanced glow filters */}
               <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -816,25 +920,26 @@ const FluGlobeVisualization = () => {
             </defs>
 
             {/* Atmosphere */}
-            <circle cx={width / 2} cy={height / 2} r={302} fill="none" stroke="rgba(80,160,220,0.1)" strokeWidth="10" />
+            <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE + 7} fill="none" stroke="rgba(80,160,220,0.1)" strokeWidth="10" />
 
             {/* Ocean */}
-            <circle cx={width / 2} cy={height / 2} r={295} fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.2)" strokeWidth="1" />
+            <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.2)" strokeWidth="1" />
 
-            {/* Graticule */}
-            <path d={path(graticule())} fill="none" stroke="rgba(100,160,200,0.08)" strokeWidth="0.5" />
+            <g clipPath="url(#globeClip)">
+              {/* Graticule */}
+              <path d={path(graticule())} fill="none" stroke="rgba(100,160,200,0.08)" strokeWidth="0.5" />
 
-            {/* Countries */}
-            {!loading && countries.map((feature, i) => (
-              <path key={i} d={path(feature)} fill="#1a3328" stroke="rgba(90,160,130,0.4)" strokeWidth="0.5" />
-            ))}
+              {/* Countries */}
+              {!loading && countries.map((feature, i) => (
+                <path key={i} d={path(feature)} fill="#1a3328" stroke="rgba(90,160,130,0.4)" strokeWidth="0.5" />
+              ))}
 
-            {loading && (
-              <text x={width / 2} y={height / 2} textAnchor="middle" fill="#666" fontSize="14">Loading map...</text>
-            )}
+              {loading && (
+                <text x={width / 2} y={height / 2} textAnchor="middle" fill="#666" fontSize="14">Loading map...</text>
+              )}
 
-            {/* Enhanced Flyways */}
-            {showMigration && flyways.map((flyway, idx) => {
+              {/* Enhanced Flyways */}
+              {showMigration && flyways.map((flyway, idx) => {
               const pathD = createFlywayPath(flyway.points);
               if (!pathD) return null;
 
@@ -936,10 +1041,10 @@ const FluGlobeVisualization = () => {
                   )}
                 </g>
               );
-            })}
+              })}
 
-            {/* Outbreaks */}
-            {showOutbreaks && outbreakMarkers.map((outbreak) => {
+              {/* Outbreaks */}
+              {showOutbreaks && outbreakMarkers.map((outbreak) => {
               const coords = [outbreak.lng, outbreak.lat];
               if (!isVisible(coords)) return null;
               const pt = projection(coords);
@@ -978,7 +1083,8 @@ const FluGlobeVisualization = () => {
                   )}
                 </g>
               );
-            })}
+              })}
+            </g>
 
             {/* Tooltip */}
             {hoveredOutbreak && (() => {
@@ -1023,11 +1129,28 @@ const FluGlobeVisualization = () => {
             borderRadius: '14px',
             backdropFilter: 'blur(8px)'
           }}>
-            <button onClick={() => setAutoRotate(!autoRotate)} style={btnStyle(autoRotate)}>
-              {autoRotate ? '⏸ Pause' : '▶ Spin'}
+            <button
+              onClick={() => setAutoRotate(!autoRotate)}
+              disabled={isZoomedIn}
+              style={{
+                ...btnStyle(autoRotate && !isZoomedIn),
+                opacity: isZoomedIn ? 0.45 : 1,
+                cursor: isZoomedIn ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isZoomedIn ? '🔍 Zoomed' : (autoRotate ? '⏸ Pause' : '▶ Spin')}
             </button>
-            <button onClick={() => { setRotation([0, -20, 0]); setAutoRotate(true); }} style={btnStyle(false)}>
+            <button
+              onClick={() => { setRotation([0, -20, 0]); setZoomLevel(1); setAutoRotate(true); }}
+              style={btnStyle(false)}
+            >
               ↺ Reset
+            </button>
+            <button onClick={() => updateZoomLevel(zoomLevel / 1.25)} style={btnStyle(false)}>
+              －
+            </button>
+            <button onClick={() => updateZoomLevel(zoomLevel * 1.25)} style={btnStyle(false)}>
+              ＋
             </button>
             <button onClick={() => setShowMigration(!showMigration)} style={btnStyle(showMigration)}>
               🦅
@@ -1171,7 +1294,7 @@ const FluGlobeVisualization = () => {
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '10px', padding: '8px' }}>
         <p style={{ fontSize: '0.52rem', color: '#4b5563', margin: 0 }}>
-          🖱️ Drag to rotate • Data: USDA + OWID (WHO human case feed), cached up to 12h • Flyways: BirdLife International
+          🖱️ Drag to rotate • Wheel/pinch to zoom • Data: USDA + OWID (WHO human case feed), cached up to 12h • Flyways: BirdLife International
         </p>
       </div>
     </div>
