@@ -36,6 +36,7 @@ const FluGlobeVisualization = () => {
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
   const [showSeverityHelp, setShowSeverityHelp] = useState(false);
+  const [showDisplayHelp, setShowDisplayHelp] = useState(false);
   const pinchZoomRef = useRef(null);
 
   const width = 620;
@@ -858,9 +859,67 @@ const FluGlobeVisualization = () => {
 
           {/* Display Mode */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}
+              onMouseEnter={() => setShowDisplayHelp(true)}
+              onMouseLeave={() => setShowDisplayHelp(false)}
+            >
+              <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
+              <button
+                type="button"
+                aria-label="Display mode help"
+                onFocus={() => setShowDisplayHelp(true)}
+                onBlur={() => setShowDisplayHelp(false)}
+                style={{
+                  width: '15px',
+                  height: '15px',
+                  borderRadius: '50%',
+                  border: '1px solid rgba(100,150,200,0.3)',
+                  background: 'rgba(15,26,43,0.9)',
+                  color: '#8ac5ff',
+                  fontSize: '0.52rem',
+                  fontWeight: '700',
+                  lineHeight: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'help',
+                  padding: 0
+                }}
+                title="Display mode definitions"
+              >
+                ?
+              </button>
+              {showDisplayHelp && (
+                <div
+                  role="tooltip"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    width: '250px',
+                    padding: '7px 8px',
+                    background: 'rgba(8,12,20,0.97)',
+                    border: '1px solid rgba(100,150,200,0.18)',
+                    borderRadius: '7px',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+                    zIndex: 30
+                  }}
+                >
+                  <div style={{ fontSize: '0.49rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
+                    Grouping controls marker density and readability:
+                  </div>
+                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                    <span style={{ color: '#00d4ff' }}>Grouped</span>: merges reports at the same map point into one marker.
+                  </div>
+                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                    <span style={{ color: '#00d4ff' }}>Individual</span>: shows each source report as its own marker.
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '3px' }}>
-              {[['location', 'Summary'], ['events', 'Detailed']].map(([value, label]) => (
+              {[['location', 'Grouped'], ['events', 'Individual']].map(([value, label]) => (
                 <button key={value} onClick={() => setOutbreakView(value)} style={btnStyle(outbreakView === value)}>
                   {label}
                 </button>
@@ -888,9 +947,9 @@ const FluGlobeVisualization = () => {
 
         {/* Active filters summary */}
         <div style={{ marginTop: '5px', fontSize: '0.52rem', color: '#4b5563', lineHeight: 1.25 }}>
-          {outbreakMarkers.length} {outbreakView === 'location' ? 'locations' : 'events'}
-          {' '}from {filteredOutbreaks.length} outbreaks
-          <span> • {outbreakView === 'location' ? 'Summary' : 'Detailed'}</span>
+          {outbreakMarkers.length} {outbreakView === 'location' ? 'grouped locations' : 'individual reports'}
+          {' '}from {filteredOutbreaks.length} reports
+          <span> • {outbreakView === 'location' ? 'Grouped view' : 'Individual view'}</span>
           <span> • Zoom {Math.round(zoomLevel * 100)}%</span>
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
@@ -1162,7 +1221,7 @@ const FluGlobeVisualization = () => {
               const tooltipStroke = getOutbreakColor(hoveredOutbreak);
               const tooltipHeight = hoveredOutbreak.isAggregated ? 116 : 102;
               const eventLabel = hoveredOutbreak.isAggregated
-                ? `${hoveredOutbreak.eventCount} merged events`
+                ? `${hoveredOutbreak.eventCount} merged reports`
                 : `${hoveredOutbreak.detections || 1} detections`;
 
               return (
