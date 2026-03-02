@@ -654,13 +654,13 @@ const FluGlobeVisualization = () => {
 
   // Control button style
   const btnStyle = (active) => ({
-    padding: '5px 10px',
+    padding: '3px 8px',
     background: active ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.03)',
     border: `1px solid ${active ? '#00d4ff' : '#333'}`,
     borderRadius: '4px',
     color: active ? '#00d4ff' : '#888',
     cursor: 'pointer',
-    fontSize: '0.6rem',
+    fontSize: '0.56rem',
     fontWeight: '500',
     transition: 'all 0.15s'
   });
@@ -727,18 +727,18 @@ const FluGlobeVisualization = () => {
       {/* Filter Controls */}
       <div style={{
         maxWidth: '1200px',
-        margin: '0 auto 12px',
-        padding: '12px 16px',
+        margin: '0 auto 8px',
+        padding: '9px 12px',
         background: 'rgba(12,20,32,0.6)',
         borderRadius: '10px',
         border: '1px solid rgba(100,150,200,0.1)',
         backdropFilter: 'blur(8px)'
       }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: '8px', columnGap: '10px', alignItems: 'center' }}>
           {/* Virus Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Virus:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Virus:</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
               {virusOptions.map(v => (
                 <button key={v} onClick={() => setVirusFilter(v)} style={{
                   ...btnStyle(virusFilter === v),
@@ -752,9 +752,9 @@ const FluGlobeVisualization = () => {
           </div>
 
           {/* Host Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Host:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Host:</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
               {[['all', 'All'], ['poultry', '🐔'], ['wild', '🦆'], ['dairy', '🐄'], ['human', '👤']].map(([v, label]) => (
                 <button key={v} onClick={() => setHostFilter(v)} style={btnStyle(hostFilter === v)}>
                   {label}
@@ -764,9 +764,9 @@ const FluGlobeVisualization = () => {
           </div>
 
           {/* Severity Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
               {[['all', 'All'], ['high', 'High'], ['medium', 'Med'], ['low', 'Low']].map(([v, label]) => (
                 <button key={v} onClick={() => setSeverityFilter(v)} style={{
                   ...btnStyle(severityFilter === v),
@@ -780,9 +780,9 @@ const FluGlobeVisualization = () => {
           </div>
 
           {/* Time Range */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time:</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
               {[['all', 'All'], ['q4', 'Last 120d'], ['recent', 'Last 45d']].map(([v, label]) => (
                 <button key={v} onClick={() => setTimeRange(v)} style={btnStyle(timeRange === v)}>
                   {label}
@@ -792,9 +792,9 @@ const FluGlobeVisualization = () => {
           </div>
 
           {/* Display Mode */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
-            <div style={{ display: 'flex', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
               {[['location', 'Summary'], ['events', 'Detailed']].map(([value, label]) => (
                 <button key={value} onClick={() => setOutbreakView(value)} style={btnStyle(outbreakView === value)}>
                   {label}
@@ -804,7 +804,7 @@ const FluGlobeVisualization = () => {
           </div>
 
           {/* Labels Toggle + Data Refresh */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               onClick={() => loadLiveData(true)}
               disabled={isRefreshingData}
@@ -813,31 +813,31 @@ const FluGlobeVisualization = () => {
                 opacity: isRefreshingData ? 0.7 : 1
               }}
             >
-              {isRefreshingData ? '↻ Refreshing' : '↻ Refresh Data'}
+              {isRefreshingData ? '↻ Refreshing' : '↻ Refresh'}
             </button>
             <button onClick={() => setShowLabels(!showLabels)} style={btnStyle(showLabels)}>
-              {showLabels ? '🏷️ Labels On' : '🏷️ Labels Off'}
+              {showLabels ? '🏷️ Labels On' : '🏷️ Labels'}
             </button>
           </div>
         </div>
 
         {/* Active filters summary */}
-        <div style={{ marginTop: '8px', fontSize: '0.55rem', color: '#4b5563' }}>
-          Showing {outbreakMarkers.length} {outbreakView === 'location' ? 'locations' : 'events'}
-          {' '}from {filteredOutbreaks.length} filtered outbreaks
-          <span> • {outbreakView === 'location' ? 'summary mode (merged by location)' : 'detailed mode (every event)'}</span>
+        <div style={{ marginTop: '5px', fontSize: '0.52rem', color: '#4b5563', lineHeight: 1.25 }}>
+          {outbreakMarkers.length} {outbreakView === 'location' ? 'locations' : 'events'}
+          {' '}from {filteredOutbreaks.length} outbreaks
+          <span> • {outbreakView === 'location' ? 'Summary' : 'Detailed'}</span>
           <span> • Zoom {Math.round(zoomLevel * 100)}%</span>
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
           {severityFilter !== 'all' && <span style={{ color: getSeverityColor(severityFilter) }}> • {severityFilter} severity</span>}
         </div>
         {dataError && (
-          <div style={{ marginTop: '4px', fontSize: '0.55rem', color: '#f59e0b' }}>
+          <div style={{ marginTop: '3px', fontSize: '0.5rem', color: '#f59e0b', lineHeight: 1.2 }}>
             {dataError}
           </div>
         )}
         {dataWarnings.length > 0 && (
-          <div style={{ marginTop: '4px', fontSize: '0.52rem', color: '#6b7280' }}>
+          <div style={{ marginTop: '2px', fontSize: '0.49rem', color: '#6b7280', lineHeight: 1.2 }}>
             {liveWarningSummary}
           </div>
         )}
