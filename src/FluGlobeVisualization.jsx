@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 
 const FluGlobeVisualization = () => {
+  const LIVE_DATA_CACHE_KEY = 'fluglobe-live-data-v1';
+  const LIVE_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
   const [rotation, setRotation] = useState([0, -20, 0]);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState(null);
@@ -13,6 +16,13 @@ const FluGlobeVisualization = () => {
   const [autoRotate, setAutoRotate] = useState(true);
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [liveOutbreakData, setLiveOutbreakData] = useState([]);
+  const [dataUpdatedAt, setDataUpdatedAt] = useState(null);
+  const [dataWarnings, setDataWarnings] = useState([]);
+  const [liveStats, setLiveStats] = useState(null);
+  const [dataError, setDataError] = useState('');
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
+  const [isUsingFallbackData, setIsUsingFallbackData] = useState(true);
   
   // New filter states
   const [virusFilter, setVirusFilter] = useState('all');
@@ -44,6 +54,113 @@ const FluGlobeVisualization = () => {
           .catch(() => setLoading(false));
       });
   }, []);
+
+  const parseOutbreakDate = (outbreak) => {
+    if (outbreak?.timestamp) {
+      const parsed = new Date(outbreak.timestamp);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    const label = String(outbreak?.date || '').trim();
+    if (!label) return null;
+
+    if (/^\d{4}-\d{2}$/.test(label)) {
+      const parsed = new Date(`${label}-01T00:00:00Z`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+      const parsed = new Date(`${label}T00:00:00Z`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parsed = new Date(label);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const loadLiveData = useCallback(async (forceRefresh = false) => {
+    setIsRefreshingData(true);
+    setDataError('');
+
+    let cached = null;
+    try {
+      const raw = localStorage.getItem(LIVE_DATA_CACHE_KEY);
+      if (raw) cached = JSON.parse(raw);
+    } catch {
+      cached = null;
+    }
+
+    if (!forceRefresh && cached?.savedAt && Array.isArray(cached?.outbreaks)) {
+      const age = Date.now() - cached.savedAt;
+      if (age < LIVE_DATA_CACHE_TTL_MS) {
+        setLiveOutbreakData(cached.outbreaks);
+        setLiveStats(cached.stats || null);
+        setDataUpdatedAt(cached.generatedAt || null);
+        setDataWarnings(cached.warnings || []);
+        setIsUsingFallbackData(false);
+        setIsRefreshingData(false);
+        return;
+      }
+    }
+
+    try {
+      const query = forceRefresh ? `?force=1&t=${Date.now()}` : '';
+      const response = await fetch(`/api/flu-data${query}`);
+      if (!response.ok) {
+        throw new Error(`Live data request failed (${response.status})`);
+      }
+
+      const payload = await response.json();
+      if (!Array.isArray(payload?.outbreaks) || payload.outbreaks.length === 0) {
+        throw new Error('Live data endpoint returned no rows');
+      }
+
+      setLiveOutbreakData(payload.outbreaks);
+      setLiveStats(payload.stats || null);
+      setDataUpdatedAt(payload.generatedAt || null);
+      setDataWarnings(payload.warnings || []);
+      setIsUsingFallbackData(false);
+
+      try {
+        localStorage.setItem(
+          LIVE_DATA_CACHE_KEY,
+          JSON.stringify({
+            savedAt: Date.now(),
+            outbreaks: payload.outbreaks,
+            stats: payload.stats || null,
+            warnings: payload.warnings || [],
+            generatedAt: payload.generatedAt || null
+          })
+        );
+      } catch {
+        // Ignore local storage write errors.
+      }
+    } catch (error) {
+      if (cached?.outbreaks?.length) {
+        setLiveOutbreakData(cached.outbreaks);
+        setLiveStats(cached.stats || null);
+        setDataUpdatedAt(cached.generatedAt || null);
+        setDataWarnings([
+          ...new Set([...(cached.warnings || []), 'Using last cached live data due to refresh failure.'])
+        ]);
+        setIsUsingFallbackData(false);
+      } else {
+        setLiveOutbreakData([]);
+        setLiveStats(null);
+        setDataUpdatedAt(null);
+        setDataWarnings([]);
+        setIsUsingFallbackData(true);
+      }
+
+      setDataError(error instanceof Error ? error.message : 'Live data refresh failed');
+    } finally {
+      setIsRefreshingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLiveData(false);
+  }, [loadLiveData]);
 
   // TopoJSON to GeoJSON converter
   const topojsonToGeojson = (topology, object) => {
@@ -133,15 +250,59 @@ const FluGlobeVisualization = () => {
     { id: 28, lat: 60, lng: 25, country: 'Finland', cases: 31, date: '2024-12', month: 12, severity: 'low', type: 'wild', virus: 'H5N5' },
   ];
 
+  const displayedOutbreakData = liveOutbreakData.length > 0 ? liveOutbreakData : outbreakData;
+
+  const virusOptions = useMemo(() => {
+    const options = new Set(
+      displayedOutbreakData
+        .map((item) => item.virus)
+        .filter(Boolean)
+    );
+    return ['all', ...Array.from(options).sort((a, b) => a.localeCompare(b))];
+  }, [displayedOutbreakData]);
+
+  useEffect(() => {
+    if (virusFilter !== 'all' && !virusOptions.includes(virusFilter)) {
+      setVirusFilter('all');
+    }
+  }, [virusFilter, virusOptions]);
+
   // Filter outbreaks based on user selections
-  const filteredOutbreaks = outbreakData.filter(o => {
+  const filteredOutbreaks = displayedOutbreakData.filter(o => {
     if (virusFilter !== 'all' && o.virus !== virusFilter) return false;
     if (hostFilter !== 'all' && o.type !== hostFilter) return false;
     if (severityFilter !== 'all' && o.severity !== severityFilter) return false;
-    if (timeRange === 'recent' && o.month < 11) return false;
-    if (timeRange === 'q4' && o.month < 10) return false;
+
+    const eventDate = parseOutbreakDate(o);
+    if (timeRange === 'recent') {
+      if (!eventDate) return false;
+      if ((Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24) > 45) return false;
+    }
+    if (timeRange === 'q4') {
+      if (!eventDate) return false;
+      if ((Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24) > 120) return false;
+    }
     return true;
   });
+
+  const stats = useMemo(() => {
+    if (liveStats) return liveStats;
+
+    const totalCases = displayedOutbreakData.reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
+    const countriesCount = new Set(
+      displayedOutbreakData.map((row) => (row.country?.startsWith('USA - ') ? 'USA' : row.country))
+    ).size;
+
+    const usLivestockCases = displayedOutbreakData
+      .filter((row) => row.country?.startsWith('USA - ') && (row.type === 'poultry' || row.type === 'dairy'))
+      .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
+
+    const humanCases = displayedOutbreakData
+      .filter((row) => row.type === 'human')
+      .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
+
+    return { totalCases, countriesCount, usLivestockCases, humanCases };
+  }, [displayedOutbreakData, liveStats]);
 
   // Flyways
   const flyways = [
@@ -308,6 +469,12 @@ const FluGlobeVisualization = () => {
     transition: 'all 0.15s'
   });
 
+  const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+  const standardNumber = new Intl.NumberFormat('en-US');
+  const formattedUpdatedAt = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -332,7 +499,9 @@ const FluGlobeVisualization = () => {
           Global Avian Influenza Tracker
         </h1>
         <p style={{ fontSize: '0.68rem', color: '#6b7280', letterSpacing: '0.06em', margin: 0 }}>
-          HPAI Outbreaks & Migratory Bird Flyways • 2024–2025
+          HPAI Outbreaks & Migratory Bird Flyways
+          {formattedUpdatedAt && ` • Updated ${formattedUpdatedAt}`}
+          {isUsingFallbackData && ' • Fallback snapshot'}
         </p>
       </div>
 
@@ -351,7 +520,7 @@ const FluGlobeVisualization = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Virus:</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {['all', 'H5N1', 'H5N5', 'H9N2', 'H7N9'].map(v => (
+              {virusOptions.map(v => (
                 <button key={v} onClick={() => setVirusFilter(v)} style={{
                   ...btnStyle(virusFilter === v),
                   borderColor: v !== 'all' && virusFilter === v ? getVirusColor(v) : (virusFilter === v ? '#00d4ff' : '#333'),
@@ -395,7 +564,7 @@ const FluGlobeVisualization = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.6rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time:</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {[['all', 'All Time'], ['q4', 'Q4 2024'], ['recent', 'Last 60d']].map(([v, label]) => (
+              {[['all', 'All'], ['q4', 'Last 120d'], ['recent', 'Last 45d']].map(([v, label]) => (
                 <button key={v} onClick={() => setTimeRange(v)} style={btnStyle(timeRange === v)}>
                   {label}
                 </button>
@@ -403,8 +572,18 @@ const FluGlobeVisualization = () => {
             </div>
           </div>
 
-          {/* Labels Toggle */}
+          {/* Labels Toggle + Data Refresh */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+            <button
+              onClick={() => loadLiveData(true)}
+              disabled={isRefreshingData}
+              style={{
+                ...btnStyle(isRefreshingData),
+                opacity: isRefreshingData ? 0.7 : 1
+              }}
+            >
+              {isRefreshingData ? '↻ Refreshing' : '↻ Refresh Data'}
+            </button>
             <button onClick={() => setShowLabels(!showLabels)} style={btnStyle(showLabels)}>
               {showLabels ? '🏷️ Labels On' : '🏷️ Labels Off'}
             </button>
@@ -413,11 +592,21 @@ const FluGlobeVisualization = () => {
 
         {/* Active filters summary */}
         <div style={{ marginTop: '8px', fontSize: '0.55rem', color: '#4b5563' }}>
-          Showing {filteredOutbreaks.length} of {outbreakData.length} outbreaks
+          Showing {filteredOutbreaks.length} of {displayedOutbreakData.length} outbreaks
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
           {severityFilter !== 'all' && <span style={{ color: getSeverityColor(severityFilter) }}> • {severityFilter} severity</span>}
         </div>
+        {dataError && (
+          <div style={{ marginTop: '4px', fontSize: '0.55rem', color: '#f59e0b' }}>
+            {dataError}
+          </div>
+        )}
+        {dataWarnings.length > 0 && (
+          <div style={{ marginTop: '4px', fontSize: '0.52rem', color: '#6b7280' }}>
+            {dataWarnings.join(' • ')}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
@@ -664,13 +853,14 @@ const FluGlobeVisualization = () => {
 
               return (
                 <g transform={`translate(${tx},${ty})`}>
-                  <rect x="0" y="0" width="155" height="90" rx="6" fill="rgba(8,12,20,0.95)" stroke={getVirusColor(hoveredOutbreak.virus)} strokeWidth="1.5" />
+                  <rect x="0" y="0" width="155" height="102" rx="6" fill="rgba(8,12,20,0.95)" stroke={getVirusColor(hoveredOutbreak.virus)} strokeWidth="1.5" />
                   <text x="10" y="18" fill="#fff" fontSize="11" fontWeight="600">{hoveredOutbreak.country}</text>
                   <text x="10" y="34" fill={getVirusColor(hoveredOutbreak.virus)} fontSize="10" fontWeight="600">{hoveredOutbreak.virus}</text>
                   <text x="50" y="34" fill="#9ca3af" fontSize="9">{getTypeIcon(hoveredOutbreak.type)} {hoveredOutbreak.type}</text>
                   <text x="10" y="52" fill="#9ca3af" fontSize="9">📅 {hoveredOutbreak.date}</text>
                   <text x="10" y="68" fill={getSeverityColor(hoveredOutbreak.severity)} fontSize="10" fontWeight="500">{hoveredOutbreak.cases} cases</text>
                   <text x="10" y="82" fill="#6b7280" fontSize="8">Severity: {hoveredOutbreak.severity.toUpperCase()}</text>
+                  <text x="10" y="95" fill="#6b7280" fontSize="7">{hoveredOutbreak.source || 'Source unavailable'}</text>
                 </g>
               );
             })()}
@@ -780,19 +970,27 @@ const FluGlobeVisualization = () => {
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#ff2d55' }}>743</div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>EU Detections</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#ff2d55' }}>
+                  {compactNumber.format(stats.totalCases || 0)}
+                </div>
+                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Total Cases</div>
               </div>
               <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#00d4ff' }}>31</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#00d4ff' }}>
+                  {standardNumber.format(stats.countriesCount || 0)}
+                </div>
                 <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Countries</div>
               </div>
               <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#f59e0b' }}>~1000</div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>US Farms</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#f59e0b' }}>
+                  {compactNumber.format(stats.usLivestockCases || 0)}
+                </div>
+                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>US Livestock</div>
               </div>
               <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#a855f7' }}>22</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#a855f7' }}>
+                  {standardNumber.format(stats.humanCases || 0)}
+                </div>
                 <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Human Cases</div>
               </div>
             </div>
@@ -829,7 +1027,7 @@ const FluGlobeVisualization = () => {
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '10px', padding: '8px' }}>
         <p style={{ fontSize: '0.52rem', color: '#4b5563', margin: 0 }}>
-          🖱️ Drag to rotate • Data: EFSA, WHO, USDA, WOAH, FAO | Flyways: BirdLife International
+          🖱️ Drag to rotate • Data: USDA + OWID (WHO human case feed), cached up to 12h • Flyways: BirdLife International
         </p>
       </div>
     </div>
