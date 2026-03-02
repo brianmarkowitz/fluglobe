@@ -469,6 +469,28 @@ const FluGlobeVisualization = () => {
     transition: 'all 0.15s'
   });
 
+  const getOutbreakRadius = (outbreak) => {
+    const cases = Math.max(1, Number(outbreak?.cases) || 1);
+    const detections = Math.max(1, Number(outbreak?.detections) || 1);
+    const logCases = Math.log10(cases + 1);
+
+    if (outbreak?.type === 'poultry' || outbreak?.type === 'dairy') {
+      // Livestock rows can represent very large counts, so use a capped log scale.
+      return Math.min(20, 4 + logCases * 1.8 + Math.sqrt(detections) * 0.7);
+    }
+
+    if (outbreak?.type === 'human') {
+      return Math.min(14, 4 + Math.sqrt(cases) * 0.8);
+    }
+
+    return Math.min(12, 3 + Math.sqrt(detections) * 1.8);
+  };
+
+  const liveWarningSummary =
+    dataWarnings.length > 0
+      ? 'Some source feeds are temporarily unavailable. Showing available live data.'
+      : '';
+
   const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
   const standardNumber = new Intl.NumberFormat('en-US');
   const formattedUpdatedAt = dataUpdatedAt
@@ -604,7 +626,7 @@ const FluGlobeVisualization = () => {
         )}
         {dataWarnings.length > 0 && (
           <div style={{ marginTop: '4px', fontSize: '0.52rem', color: '#6b7280' }}>
-            {dataWarnings.join(' • ')}
+            {liveWarningSummary}
           </div>
         )}
       </div>
@@ -807,7 +829,7 @@ const FluGlobeVisualization = () => {
               const pt = projection(coords);
               if (!pt) return null;
 
-              const r = Math.sqrt(outbreak.cases) / 5 + 4;
+              const r = getOutbreakRadius(outbreak);
               const pulse = 1 + Math.sin((animationPhase * 0.4) * Math.PI / 180) * 0.2;
               const color = virusFilter !== 'all' ? getVirusColor(outbreak.virus) : getSeverityColor(outbreak.severity);
               const hovered = hoveredOutbreak?.id === outbreak.id;
