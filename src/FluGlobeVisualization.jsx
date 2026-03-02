@@ -1416,10 +1416,40 @@ const FluGlobeVisualization = () => {
       </div>
 
       {/* Footer */}
-      <div style={{ textAlign: 'center', marginTop: '10px', padding: '8px' }}>
-        <p style={{ fontSize: '0.52rem', color: '#4b5563', margin: 0 }}>
-          🖱️ Drag to rotate • Wheel/pinch to zoom • Data: USDA + OWID (WHO human case feed), cached up to 12h • Flyways: BirdLife International
-        </p>
+      <div style={{ textAlign: 'center', marginTop: '10px', padding: '0 10px 12px' }}>
+        <div
+          style={{
+            maxWidth: '1200px',
+            margin: '0 auto',
+            padding: '8px 10px',
+            background: 'rgba(12,20,32,0.58)',
+            borderRadius: '10px',
+            border: '1px solid rgba(100,150,200,0.14)',
+            backdropFilter: 'blur(6px)'
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: '0.63rem',
+              color: '#a8b6c8',
+              fontWeight: '500',
+              lineHeight: 1.45,
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              gap: '6px 10px'
+            }}
+          >
+            <span style={{ color: '#d1d9e6' }}>🖱️ Drag to rotate</span>
+            <span style={{ color: '#5f6e82' }}>•</span>
+            <span style={{ color: '#d1d9e6' }}>Wheel/pinch to zoom</span>
+            <span style={{ color: '#5f6e82' }}>•</span>
+            <span>Data: USDA + OWID (WHO human case feed), cached up to 12h</span>
+            <span style={{ color: '#5f6e82' }}>•</span>
+            <span>Flyways: BirdLife International</span>
+          </p>
+        </div>
       </div>
     </div>
   );
