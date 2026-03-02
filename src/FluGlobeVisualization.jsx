@@ -35,6 +35,7 @@ const FluGlobeVisualization = () => {
   const [timeRange, setTimeRange] = useState('recent');
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
+  const [showSeverityHelp, setShowSeverityHelp] = useState(false);
   const pinchZoomRef = useRef(null);
 
   const width = 620;
@@ -765,7 +766,71 @@ const FluGlobeVisualization = () => {
 
           {/* Severity Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}
+              onMouseEnter={() => setShowSeverityHelp(true)}
+              onMouseLeave={() => setShowSeverityHelp(false)}
+            >
+              <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
+              <button
+                type="button"
+                aria-label="Severity threshold help"
+                onFocus={() => setShowSeverityHelp(true)}
+                onBlur={() => setShowSeverityHelp(false)}
+                style={{
+                  width: '15px',
+                  height: '15px',
+                  borderRadius: '50%',
+                  border: '1px solid rgba(100,150,200,0.3)',
+                  background: 'rgba(15,26,43,0.9)',
+                  color: '#8ac5ff',
+                  fontSize: '0.52rem',
+                  fontWeight: '700',
+                  lineHeight: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'help',
+                  padding: 0
+                }}
+                title="Severity uses host-specific case thresholds"
+              >
+                ?
+              </button>
+              {showSeverityHelp && (
+                <div
+                  role="tooltip"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    left: 0,
+                    width: '250px',
+                    padding: '7px 8px',
+                    background: 'rgba(8,12,20,0.97)',
+                    border: '1px solid rgba(100,150,200,0.18)',
+                    borderRadius: '7px',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+                    zIndex: 30
+                  }}
+                >
+                  <div style={{ fontSize: '0.49rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
+                    Event severity is a case-count heuristic by host type:
+                  </div>
+                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                    <span style={{ color: '#ff2d55' }}>High</span>:
+                    {' '}Poultry/Dairy 5000+, Human 10+, Wild 20+
+                  </div>
+                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                    <span style={{ color: '#ff9500' }}>Med</span>:
+                    {' '}Poultry/Dairy 250-4999, Human 2-9, Wild 5-19
+                  </div>
+                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                    <span style={{ color: '#ffcc00' }}>Low</span>:
+                    {' '}below those ranges
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: '3px' }}>
               {[['all', 'All'], ['high', 'High'], ['medium', 'Med'], ['low', 'Low']].map(([v, label]) => (
                 <button key={v} onClick={() => setSeverityFilter(v)} style={{
