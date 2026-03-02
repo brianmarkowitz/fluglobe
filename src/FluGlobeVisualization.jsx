@@ -3,6 +3,7 @@ import * as d3 from 'd3';
 
 const FluGlobeVisualization = () => {
   const BASE_GLOBE_SCALE = 295;
+  const BASE_MERCATOR_SCALE = 95;
   const MIN_ZOOM_LEVEL = 1;
   const MAX_ZOOM_LEVEL = 3.25;
   const LIVE_DATA_CACHE_KEY = 'fluglobe-live-data-v1';
@@ -18,6 +19,8 @@ const FluGlobeVisualization = () => {
   const [animationPhase, setAnimationPhase] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [mapProjectionMode, setMapProjectionMode] = useState('globe');
+  const [mapPan, setMapPan] = useState([0, 0]);
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveOutbreakData, setLiveOutbreakData] = useState([]);
@@ -417,12 +420,12 @@ const FluGlobeVisualization = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       setAnimationPhase(prev => (prev + 1) % 1000);
-      if (autoRotate && !isDragging) {
+      if (mapProjectionMode === 'globe' && autoRotate && !isDragging) {
         setRotation(prev => [(prev[0] + 0.08) % 360, prev[1], prev[2]]);
       }
     }, 25);
     return () => clearInterval(interval);
-  }, [autoRotate, isDragging]);
+  }, [autoRotate, isDragging, mapProjectionMode]);
 
   useEffect(() => {
     if (zoomLevel > 1.01 && autoRotate) {
@@ -430,16 +433,34 @@ const FluGlobeVisualization = () => {
     }
   }, [zoomLevel, autoRotate]);
 
+  useEffect(() => {
+    if (mapProjectionMode === 'mercator' && autoRotate) {
+      setAutoRotate(false);
+    }
+  }, [mapProjectionMode, autoRotate]);
+
   // Projection
-  const projection = d3.geoOrthographic()
-    .scale(BASE_GLOBE_SCALE * zoomLevel)
-    .rotate(rotation)
-    .translate([width / 2, height / 2]);
+  const projection = mapProjectionMode === 'mercator'
+    ? d3.geoMercator()
+        .scale(BASE_MERCATOR_SCALE * zoomLevel)
+        .center([0, 15])
+        .translate([width / 2 + mapPan[0], height / 2 + mapPan[1]])
+    : d3.geoOrthographic()
+        .scale(BASE_GLOBE_SCALE * zoomLevel)
+        .rotate(rotation)
+        .translate([width / 2, height / 2]);
 
   const path = d3.geoPath().projection(projection);
   const graticule = d3.geoGraticule().step([20, 20]);
 
   const isVisible = (coords) => {
+    const point = projection(coords);
+    if (!point) return false;
+
+    if (mapProjectionMode === 'mercator') {
+      return point[0] >= -80 && point[0] <= width + 80 && point[1] >= -80 && point[1] <= height + 80;
+    }
+
     const center = projection.invert([width / 2, height / 2]);
     if (!center) return false;
     return d3.geoDistance(coords, center) < Math.PI / 2;
@@ -497,14 +518,36 @@ const FluGlobeVisualization = () => {
     setIsDragging(true);
     setAutoRotate(false);
     const rect = e.currentTarget.getBoundingClientRect();
-    setDragStart({ x: e.clientX - rect.left, y: e.clientY - rect.top, rotation: [...rotation] });
+    setDragStart({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      rotation: [...rotation],
+      pan: [...mapPan]
+    });
+  };
+
+  const clampMercatorPan = (nextPan, zoom = zoomLevel) => {
+    const maxX = Math.max(0, (zoom - 1) * width * 0.45 + 95);
+    const maxY = Math.max(0, (zoom - 1) * height * 0.3 + 70);
+    return [
+      Math.max(-maxX, Math.min(maxX, nextPan[0])),
+      Math.max(-maxY, Math.min(maxY, nextPan[1]))
+    ];
   };
 
   const handleMouseMove = (e) => {
     if (!isDragging || !dragStart) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const dx = (e.clientX - rect.left - dragStart.x) * sensitivity;
-    const dy = (e.clientY - rect.top - dragStart.y) * sensitivity;
+    const deltaX = e.clientX - rect.left - dragStart.x;
+    const deltaY = e.clientY - rect.top - dragStart.y;
+
+    if (mapProjectionMode === 'mercator') {
+      setMapPan(clampMercatorPan([dragStart.pan[0] + deltaX, dragStart.pan[1] + deltaY]));
+      return;
+    }
+
+    const dx = deltaX * sensitivity;
+    const dy = deltaY * sensitivity;
     setRotation([dragStart.rotation[0] - dx, Math.max(-60, Math.min(60, dragStart.rotation[1] + dy)), 0]);
   };
 
@@ -516,7 +559,10 @@ const FluGlobeVisualization = () => {
   const updateZoomLevel = (nextZoom) => {
     const clamped = clampZoom(nextZoom);
     setZoomLevel(clamped);
-    if (clamped > 1.01) {
+    if (mapProjectionMode === 'mercator') {
+      setMapPan((prev) => clampMercatorPan(prev, clamped));
+    }
+    if (clamped > 1.01 || mapProjectionMode !== 'globe') {
       setAutoRotate(false);
     }
   };
@@ -555,7 +601,12 @@ const FluGlobeVisualization = () => {
       const point = getRelativePoint(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
       setIsDragging(true);
       setAutoRotate(false);
-      setDragStart({ x: point.x, y: point.y, rotation: [...rotation] });
+      setDragStart({
+        x: point.x,
+        y: point.y,
+        rotation: [...rotation],
+        pan: [...mapPan]
+      });
     }
   };
 
@@ -573,8 +624,16 @@ const FluGlobeVisualization = () => {
     if (e.touches.length === 1 && isDragging && dragStart) {
       e.preventDefault();
       const point = getRelativePoint(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
-      const dx = (point.x - dragStart.x) * sensitivity;
-      const dy = (point.y - dragStart.y) * sensitivity;
+      const deltaX = point.x - dragStart.x;
+      const deltaY = point.y - dragStart.y;
+
+      if (mapProjectionMode === 'mercator') {
+        setMapPan(clampMercatorPan([dragStart.pan[0] + deltaX, dragStart.pan[1] + deltaY]));
+        return;
+      }
+
+      const dx = deltaX * sensitivity;
+      const dy = deltaY * sensitivity;
       setRotation([dragStart.rotation[0] - dx, Math.max(-60, Math.min(60, dragStart.rotation[1] + dy)), 0]);
     }
   };
@@ -692,6 +751,8 @@ const FluGlobeVisualization = () => {
   const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
   const standardNumber = new Intl.NumberFormat('en-US');
   const isZoomedIn = zoomLevel > 1.01;
+  const isMercatorView = mapProjectionMode === 'mercator';
+  const spinDisabled = isMercatorView || isZoomedIn;
   const formattedUpdatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : null;
@@ -950,6 +1011,7 @@ const FluGlobeVisualization = () => {
           {outbreakMarkers.length} {outbreakView === 'location' ? 'grouped locations' : 'individual reports'}
           {' '}from {filteredOutbreaks.length} reports
           <span> • {outbreakView === 'location' ? 'Grouped view' : 'Individual view'}</span>
+          <span> • {isMercatorView ? 'Mercator' : 'Globe'}</span>
           <span> • Zoom {Math.round(zoomLevel * 100)}%</span>
           {virusFilter !== 'all' && <span style={{ color: getVirusColor(virusFilter) }}> • {virusFilter}</span>}
           {hostFilter !== 'all' && <span> • {getTypeIcon(hostFilter)} {hostFilter}</span>}
@@ -978,17 +1040,19 @@ const FluGlobeVisualization = () => {
       }}>
         {/* Globe */}
         <div style={{ position: 'relative' }}>
-          <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '620px',
-            height: '620px',
-            background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
-            borderRadius: '50%',
-            pointerEvents: 'none'
-          }} />
+          {mapProjectionMode === 'globe' && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '620px',
+              height: '620px',
+              background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
+              borderRadius: '50%',
+              pointerEvents: 'none'
+            }} />
+          )}
 
           <svg
             width={width}
@@ -1011,6 +1075,9 @@ const FluGlobeVisualization = () => {
 
               <clipPath id="globeClip">
                 <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} />
+              </clipPath>
+              <clipPath id="mapClip">
+                <rect x="0" y="0" width={width} height={height} />
               </clipPath>
               
               {/* Enhanced glow filters */}
@@ -1043,13 +1110,22 @@ const FluGlobeVisualization = () => {
               ))}
             </defs>
 
-            {/* Atmosphere */}
-            <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE + 7} fill="none" stroke="rgba(80,160,220,0.1)" strokeWidth="10" />
+            {mapProjectionMode === 'globe' ? (
+              <>
+                {/* Atmosphere */}
+                <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE + 7} fill="none" stroke="rgba(80,160,220,0.1)" strokeWidth="10" />
 
-            {/* Ocean */}
-            <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.2)" strokeWidth="1" />
+                {/* Ocean */}
+                <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.2)" strokeWidth="1" />
+              </>
+            ) : (
+              <>
+                <rect x="0.5" y="0.5" width={width - 1} height={height - 1} rx="16" fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.22)" strokeWidth="1" />
+                <rect x="10" y="10" width={width - 20} height={height - 20} rx="12" fill="none" stroke="rgba(80,160,220,0.08)" strokeWidth="1" />
+              </>
+            )}
 
-            <g clipPath="url(#globeClip)">
+            <g clipPath={mapProjectionMode === 'globe' ? 'url(#globeClip)' : 'url(#mapClip)'}>
               {/* Graticule */}
               <path d={path(graticule())} fill="none" stroke="rgba(100,160,200,0.08)" strokeWidth="0.5" />
 
@@ -1254,18 +1330,41 @@ const FluGlobeVisualization = () => {
             backdropFilter: 'blur(8px)'
           }}>
             <button
-              onClick={() => setAutoRotate(!autoRotate)}
-              disabled={isZoomedIn}
-              style={{
-                ...btnStyle(autoRotate && !isZoomedIn),
-                opacity: isZoomedIn ? 0.45 : 1,
-                cursor: isZoomedIn ? 'not-allowed' : 'pointer'
+              onClick={() => {
+                setHoveredOutbreak(null);
+                setSelectedFlyway(null);
+                if (isMercatorView) {
+                  setMapProjectionMode('globe');
+                  setMapPan([0, 0]);
+                  if (!isZoomedIn) setAutoRotate(true);
+                  return;
+                }
+                setMapProjectionMode('mercator');
+                setMapPan([0, 0]);
+                setAutoRotate(false);
               }}
+              style={btnStyle(isMercatorView)}
             >
-              {isZoomedIn ? '🔍 Zoomed' : (autoRotate ? '⏸ Pause' : '▶ Spin')}
+              {isMercatorView ? '🌐 Globe' : '🗺 Mercator'}
             </button>
             <button
-              onClick={() => { setRotation([0, -20, 0]); setZoomLevel(1); setAutoRotate(true); }}
+              onClick={() => setAutoRotate(!autoRotate)}
+              disabled={spinDisabled}
+              style={{
+                ...btnStyle(autoRotate && !spinDisabled),
+                opacity: spinDisabled ? 0.45 : 1,
+                cursor: spinDisabled ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isMercatorView ? '🌐 Globe Only' : (isZoomedIn ? '🔍 Zoomed' : (autoRotate ? '⏸ Pause' : '▶ Spin'))}
+            </button>
+            <button
+              onClick={() => {
+                setRotation([0, -20, 0]);
+                setMapPan([0, 0]);
+                setZoomLevel(1);
+                setAutoRotate(!isMercatorView);
+              }}
               style={btnStyle(false)}
             >
               ↺ Reset
@@ -1441,7 +1540,7 @@ const FluGlobeVisualization = () => {
               gap: '6px 10px'
             }}
           >
-            <span style={{ color: '#d1d9e6' }}>🖱️ Drag to rotate</span>
+            <span style={{ color: '#d1d9e6' }}>{isMercatorView ? '🖱️ Drag to pan' : '🖱️ Drag to rotate'}</span>
             <span style={{ color: '#5f6e82' }}>•</span>
             <span style={{ color: '#d1d9e6' }}>Wheel/pinch to zoom</span>
             <span style={{ color: '#5f6e82' }}>•</span>
