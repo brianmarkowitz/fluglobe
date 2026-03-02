@@ -21,7 +21,7 @@ const FluGlobeVisualization = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [mapProjectionMode, setMapProjectionMode] = useState('globe');
   const [mapPan, setMapPan] = useState([0, 0]);
-  const [projectionFade, setProjectionFade] = useState(1);
+  const [projectionMorph, setProjectionMorph] = useState(0);
   const [isProjectionSwitching, setIsProjectionSwitching] = useState(false);
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +43,7 @@ const FluGlobeVisualization = () => {
   const [showSeverityHelp, setShowSeverityHelp] = useState(false);
   const [showDisplayHelp, setShowDisplayHelp] = useState(false);
   const pinchZoomRef = useRef(null);
-  const projectionSwitchTimeoutsRef = useRef([]);
+  const projectionAnimationFrameRef = useRef(null);
 
   const width = 620;
   const height = 620;
@@ -443,20 +443,42 @@ const FluGlobeVisualization = () => {
   }, [mapProjectionMode, autoRotate]);
 
   useEffect(() => () => {
-    projectionSwitchTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
-    projectionSwitchTimeoutsRef.current = [];
+    if (projectionAnimationFrameRef.current) {
+      cancelAnimationFrame(projectionAnimationFrameRef.current);
+      projectionAnimationFrameRef.current = null;
+    }
   }, []);
 
   // Projection
-  const projection = mapProjectionMode === 'mercator'
-    ? d3.geoMercator()
-        .scale(BASE_MERCATOR_SCALE * zoomLevel)
-        .center([0, 15])
-        .translate([width / 2 + mapPan[0], height / 2 + mapPan[1]])
-    : d3.geoOrthographic()
-        .scale(BASE_GLOBE_SCALE * zoomLevel)
-        .rotate(rotation)
-        .translate([width / 2, height / 2]);
+  const projection = useMemo(() => {
+    const morph = projectionMorph;
+    const MERCATOR_MAX_LAT = (85 * Math.PI) / 180;
+
+    const morphRaw = (lambda, phi) => {
+      const orthX = Math.cos(phi) * Math.sin(lambda);
+      const orthY = Math.sin(phi);
+
+      const clampedPhi = Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, phi));
+      const mercY = Math.log(Math.tan(Math.PI / 4 + clampedPhi / 2));
+
+      return [
+        orthX * (1 - morph) + lambda * morph,
+        orthY * (1 - morph) + mercY * morph
+      ];
+    };
+
+    const scale =
+      (BASE_GLOBE_SCALE + (BASE_MERCATOR_SCALE - BASE_GLOBE_SCALE) * morph) * zoomLevel;
+    const translate = [width / 2 + mapPan[0] * morph, height / 2 + mapPan[1] * morph];
+    const clipAngle = morph >= 0.999 ? null : 90 + morph * 89.7;
+
+    return d3
+      .geoProjection(morphRaw)
+      .scale(scale)
+      .rotate(rotation)
+      .translate(translate)
+      .clipAngle(clipAngle);
+  }, [projectionMorph, zoomLevel, mapPan, rotation]);
 
   const path = d3.geoPath().projection(projection);
   const graticule = d3.geoGraticule().step([20, 20]);
@@ -465,13 +487,23 @@ const FluGlobeVisualization = () => {
     const point = projection(coords);
     if (!point) return false;
 
-    if (mapProjectionMode === 'mercator') {
+    if (projectionMorph >= 0.999) {
       return point[0] >= -80 && point[0] <= width + 80 && point[1] >= -80 && point[1] <= height + 80;
     }
 
-    const center = projection.invert([width / 2, height / 2]);
+    const center = projection.invert([
+      width / 2 + mapPan[0] * projectionMorph,
+      height / 2 + mapPan[1] * projectionMorph
+    ]);
     if (!center) return false;
-    return d3.geoDistance(coords, center) < Math.PI / 2;
+    const maxDistance = Math.PI / 2 + projectionMorph * (Math.PI / 2);
+    return (
+      d3.geoDistance(coords, center) <= maxDistance &&
+      point[0] >= -120 &&
+      point[0] <= width + 120 &&
+      point[1] >= -120 &&
+      point[1] <= height + 120
+    );
   };
 
   const getSeverityColor = (severity) => {
@@ -660,36 +692,48 @@ const FluGlobeVisualization = () => {
   const switchProjectionMode = useCallback((nextMode) => {
     if (nextMode === mapProjectionMode || isProjectionSwitching) return;
 
-    const durationMs = 680;
-    const halfDuration = Math.floor(durationMs / 2);
+    if (projectionAnimationFrameRef.current) {
+      cancelAnimationFrame(projectionAnimationFrameRef.current);
+      projectionAnimationFrameRef.current = null;
+    }
 
-    projectionSwitchTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
-    projectionSwitchTimeoutsRef.current = [];
+    const fromMorph = projectionMorph;
+    const toMorph = nextMode === 'mercator' ? 1 : 0;
+    const durationMs = 980;
 
     setIsProjectionSwitching(true);
     setHoveredOutbreak(null);
     setSelectedFlyway(null);
 
-    setProjectionFade(0.14);
+    const easeInOutCubic = (t) =>
+      t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-    const switchTimeout = setTimeout(() => {
+    const startTime = performance.now();
+    const tick = (now) => {
+      const progress = Math.min(1, (now - startTime) / durationMs);
+      const eased = easeInOutCubic(progress);
+      const current = fromMorph + (toMorph - fromMorph) * eased;
+      setProjectionMorph(current);
+
+      if (progress < 1) {
+        projectionAnimationFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      projectionAnimationFrameRef.current = null;
+      setProjectionMorph(toMorph);
       setMapProjectionMode(nextMode);
-      setMapPan([0, 0]);
       if (nextMode === 'mercator') {
         setAutoRotate(false);
-      } else if (zoomLevel <= 1.01) {
-        setAutoRotate(true);
+      } else {
+        setMapPan([0, 0]);
+        if (zoomLevel <= 1.01) setAutoRotate(true);
       }
-      setProjectionFade(1);
-    }, halfDuration);
-
-    const doneTimeout = setTimeout(() => {
       setIsProjectionSwitching(false);
-      projectionSwitchTimeoutsRef.current = [];
-    }, durationMs + 30);
+    };
 
-    projectionSwitchTimeoutsRef.current.push(switchTimeout, doneTimeout);
-  }, [isProjectionSwitching, mapProjectionMode, zoomLevel]);
+    projectionAnimationFrameRef.current = requestAnimationFrame(tick);
+  }, [isProjectionSwitching, mapProjectionMode, projectionMorph, zoomLevel]);
 
   // Create flyway path
   const createFlywayPath = (points) => {
@@ -1084,26 +1128,22 @@ const FluGlobeVisualization = () => {
         <div style={{ position: 'relative' }}>
           <div
             style={{
-              opacity: projectionFade,
-              transform: `scale(${0.985 + projectionFade * 0.015})`,
-              transition: 'opacity 340ms ease, transform 340ms ease',
-              willChange: 'opacity, transform',
               pointerEvents: isProjectionSwitching ? 'none' : 'auto'
             }}
           >
-            {mapProjectionMode === 'globe' && (
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '620px',
-                height: '620px',
-                background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
-                borderRadius: '50%',
-                pointerEvents: 'none'
-              }} />
-            )}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '620px',
+              height: '620px',
+              background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
+              borderRadius: '50%',
+              opacity: Math.max(0, 1 - projectionMorph),
+              transition: 'opacity 180ms linear',
+              pointerEvents: 'none'
+            }} />
 
             <svg
               width={width}
@@ -1161,22 +1201,53 @@ const FluGlobeVisualization = () => {
               ))}
             </defs>
 
-            {mapProjectionMode === 'globe' ? (
-              <>
-                {/* Atmosphere */}
-                <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE + 7} fill="none" stroke="rgba(80,160,220,0.1)" strokeWidth="10" />
+            {/* Atmosphere */}
+            <circle
+              cx={width / 2}
+              cy={height / 2}
+              r={BASE_GLOBE_SCALE + 7}
+              fill="none"
+              stroke="rgba(80,160,220,0.1)"
+              strokeWidth="10"
+              opacity={Math.max(0, 1 - projectionMorph)}
+            />
 
-                {/* Ocean */}
-                <circle cx={width / 2} cy={height / 2} r={BASE_GLOBE_SCALE} fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.2)" strokeWidth="1" />
-              </>
-            ) : (
-              <>
-                <rect x="0.5" y="0.5" width={width - 1} height={height - 1} rx="16" fill="url(#oceanGrad)" stroke="rgba(80,160,220,0.22)" strokeWidth="1" />
-                <rect x="10" y="10" width={width - 20} height={height - 20} rx="12" fill="none" stroke="rgba(80,160,220,0.08)" strokeWidth="1" />
-              </>
-            )}
+            {/* Globe Ocean */}
+            <circle
+              cx={width / 2}
+              cy={height / 2}
+              r={BASE_GLOBE_SCALE}
+              fill="url(#oceanGrad)"
+              stroke="rgba(80,160,220,0.2)"
+              strokeWidth="1"
+              opacity={Math.max(0, 1 - projectionMorph)}
+            />
 
-            <g clipPath={mapProjectionMode === 'globe' ? 'url(#globeClip)' : 'url(#mapClip)'}>
+            {/* Flat Ocean Frame */}
+            <rect
+              x="0.5"
+              y="0.5"
+              width={width - 1}
+              height={height - 1}
+              rx="16"
+              fill="url(#oceanGrad)"
+              stroke="rgba(80,160,220,0.22)"
+              strokeWidth="1"
+              opacity={projectionMorph}
+            />
+            <rect
+              x="10"
+              y="10"
+              width={width - 20}
+              height={height - 20}
+              rx="12"
+              fill="none"
+              stroke="rgba(80,160,220,0.08)"
+              strokeWidth="1"
+              opacity={projectionMorph}
+            />
+
+            <g clipPath="url(#mapClip)">
               {/* Graticule */}
               <path d={path(graticule())} fill="none" stroke="rgba(100,160,200,0.08)" strokeWidth="0.5" />
 
@@ -1409,14 +1480,35 @@ const FluGlobeVisualization = () => {
                 setZoomLevel(1);
                 setAutoRotate(!isMercatorView);
               }}
-              style={btnStyle(false)}
+              disabled={isProjectionSwitching}
+              style={{
+                ...btnStyle(false),
+                opacity: isProjectionSwitching ? 0.45 : 1,
+                cursor: isProjectionSwitching ? 'not-allowed' : 'pointer'
+              }}
             >
               ↺ Reset
             </button>
-            <button onClick={() => updateZoomLevel(zoomLevel / 1.25)} style={btnStyle(false)}>
+            <button
+              onClick={() => updateZoomLevel(zoomLevel / 1.25)}
+              disabled={isProjectionSwitching}
+              style={{
+                ...btnStyle(false),
+                opacity: isProjectionSwitching ? 0.45 : 1,
+                cursor: isProjectionSwitching ? 'not-allowed' : 'pointer'
+              }}
+            >
               －
             </button>
-            <button onClick={() => updateZoomLevel(zoomLevel * 1.25)} style={btnStyle(false)}>
+            <button
+              onClick={() => updateZoomLevel(zoomLevel * 1.25)}
+              disabled={isProjectionSwitching}
+              style={{
+                ...btnStyle(false),
+                opacity: isProjectionSwitching ? 0.45 : 1,
+                cursor: isProjectionSwitching ? 'not-allowed' : 'pointer'
+              }}
+            >
               ＋
             </button>
             <button onClick={() => setShowMigration(!showMigration)} style={btnStyle(showMigration)}>
