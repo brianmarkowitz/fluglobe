@@ -21,6 +21,8 @@ const FluGlobeVisualization = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [mapProjectionMode, setMapProjectionMode] = useState('globe');
   const [mapPan, setMapPan] = useState([0, 0]);
+  const [projectionFade, setProjectionFade] = useState(1);
+  const [isProjectionSwitching, setIsProjectionSwitching] = useState(false);
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveOutbreakData, setLiveOutbreakData] = useState([]);
@@ -41,6 +43,7 @@ const FluGlobeVisualization = () => {
   const [showSeverityHelp, setShowSeverityHelp] = useState(false);
   const [showDisplayHelp, setShowDisplayHelp] = useState(false);
   const pinchZoomRef = useRef(null);
+  const projectionSwitchTimeoutsRef = useRef([]);
 
   const width = 620;
   const height = 620;
@@ -439,6 +442,11 @@ const FluGlobeVisualization = () => {
     }
   }, [mapProjectionMode, autoRotate]);
 
+  useEffect(() => () => {
+    projectionSwitchTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    projectionSwitchTimeoutsRef.current = [];
+  }, []);
+
   // Projection
   const projection = mapProjectionMode === 'mercator'
     ? d3.geoMercator()
@@ -648,6 +656,40 @@ const FluGlobeVisualization = () => {
       setDragStart(null);
     }
   };
+
+  const switchProjectionMode = useCallback((nextMode) => {
+    if (nextMode === mapProjectionMode || isProjectionSwitching) return;
+
+    const durationMs = 680;
+    const halfDuration = Math.floor(durationMs / 2);
+
+    projectionSwitchTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    projectionSwitchTimeoutsRef.current = [];
+
+    setIsProjectionSwitching(true);
+    setHoveredOutbreak(null);
+    setSelectedFlyway(null);
+
+    setProjectionFade(0.14);
+
+    const switchTimeout = setTimeout(() => {
+      setMapProjectionMode(nextMode);
+      setMapPan([0, 0]);
+      if (nextMode === 'mercator') {
+        setAutoRotate(false);
+      } else if (zoomLevel <= 1.01) {
+        setAutoRotate(true);
+      }
+      setProjectionFade(1);
+    }, halfDuration);
+
+    const doneTimeout = setTimeout(() => {
+      setIsProjectionSwitching(false);
+      projectionSwitchTimeoutsRef.current = [];
+    }, durationMs + 30);
+
+    projectionSwitchTimeoutsRef.current.push(switchTimeout, doneTimeout);
+  }, [isProjectionSwitching, mapProjectionMode, zoomLevel]);
 
   // Create flyway path
   const createFlywayPath = (points) => {
@@ -1040,33 +1082,42 @@ const FluGlobeVisualization = () => {
       }}>
         {/* Globe */}
         <div style={{ position: 'relative' }}>
-          {mapProjectionMode === 'globe' && (
-            <div style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '620px',
-              height: '620px',
-              background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
-              borderRadius: '50%',
-              pointerEvents: 'none'
-            }} />
-          )}
-
-          <svg
-            width={width}
-            height={height}
-            style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'block', touchAction: 'none' }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onWheel={handleWheel}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
+          <div
+            style={{
+              opacity: projectionFade,
+              transform: `scale(${0.985 + projectionFade * 0.015})`,
+              transition: 'opacity 340ms ease, transform 340ms ease',
+              willChange: 'opacity, transform',
+              pointerEvents: isProjectionSwitching ? 'none' : 'auto'
+            }}
           >
+            {mapProjectionMode === 'globe' && (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '620px',
+                height: '620px',
+                background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
+                borderRadius: '50%',
+                pointerEvents: 'none'
+              }} />
+            )}
+
+            <svg
+              width={width}
+              height={height}
+              style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'block', touchAction: 'none' }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
             <defs>
               <radialGradient id="oceanGrad" cx="30%" cy="30%">
                 <stop offset="0%" stopColor="#1e3a50" />
@@ -1314,7 +1365,8 @@ const FluGlobeVisualization = () => {
                 </g>
               );
             })()}
-          </svg>
+            </svg>
+          </div>
 
           {/* Globe Controls */}
           <div style={{
@@ -1330,30 +1382,22 @@ const FluGlobeVisualization = () => {
             backdropFilter: 'blur(8px)'
           }}>
             <button
-              onClick={() => {
-                setHoveredOutbreak(null);
-                setSelectedFlyway(null);
-                if (isMercatorView) {
-                  setMapProjectionMode('globe');
-                  setMapPan([0, 0]);
-                  if (!isZoomedIn) setAutoRotate(true);
-                  return;
-                }
-                setMapProjectionMode('mercator');
-                setMapPan([0, 0]);
-                setAutoRotate(false);
+              onClick={() => switchProjectionMode(isMercatorView ? 'globe' : 'mercator')}
+              disabled={isProjectionSwitching}
+              style={{
+                ...btnStyle(isMercatorView),
+                opacity: isProjectionSwitching ? 0.7 : 1
               }}
-              style={btnStyle(isMercatorView)}
             >
-              {isMercatorView ? '🌐 Globe' : '🗺 Mercator'}
+              {isProjectionSwitching ? '↔ Switching' : (isMercatorView ? '🌐 Globe' : '🗺 Mercator')}
             </button>
             <button
               onClick={() => setAutoRotate(!autoRotate)}
-              disabled={spinDisabled}
+              disabled={spinDisabled || isProjectionSwitching}
               style={{
                 ...btnStyle(autoRotate && !spinDisabled),
-                opacity: spinDisabled ? 0.45 : 1,
-                cursor: spinDisabled ? 'not-allowed' : 'pointer'
+                opacity: (spinDisabled || isProjectionSwitching) ? 0.45 : 1,
+                cursor: (spinDisabled || isProjectionSwitching) ? 'not-allowed' : 'pointer'
               }}
             >
               {isMercatorView ? '🌐 Globe Only' : (isZoomedIn ? '🔍 Zoomed' : (autoRotate ? '⏸ Pause' : '▶ Spin'))}
