@@ -482,6 +482,15 @@ const FluGlobeVisualization = () => {
 
   const path = d3.geoPath().projection(projection);
   const graticule = d3.geoGraticule().step([20, 20]);
+  const visibilityProjection = useMemo(
+    () =>
+      d3
+        .geoOrthographic()
+        .scale(BASE_GLOBE_SCALE)
+        .rotate(rotation)
+        .translate([width / 2, height / 2]),
+    [rotation]
+  );
 
   const isVisible = (coords) => {
     const point = projection(coords);
@@ -491,10 +500,7 @@ const FluGlobeVisualization = () => {
       return point[0] >= -80 && point[0] <= width + 80 && point[1] >= -80 && point[1] <= height + 80;
     }
 
-    const center = projection.invert([
-      width / 2 + mapPan[0] * projectionMorph,
-      height / 2 + mapPan[1] * projectionMorph
-    ]);
+    const center = visibilityProjection.invert([width / 2, height / 2]);
     if (!center) return false;
     const maxDistance = Math.PI / 2 + projectionMorph * (Math.PI / 2);
     return (
