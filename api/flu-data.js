@@ -32,10 +32,8 @@ const DEFAULT_LOOKBACK_DAYS = 365;
 const DEFAULT_MAX_POINTS = 500;
 const SERVER_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const REQUEST_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36',
-  Accept: 'text/csv,text/plain,application/json,*/*',
-  Referer: 'https://www.aphis.usda.gov/'
+  'User-Agent': 'FluGlobe/1.0',
+  Accept: 'text/csv,text/plain,application/json,*/*'
 };
 
 let memoryCache = {
