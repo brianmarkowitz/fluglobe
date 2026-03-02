@@ -32,7 +32,7 @@ const FluGlobeVisualization = () => {
   const [virusFilter, setVirusFilter] = useState('all');
   const [hostFilter, setHostFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [timeRange, setTimeRange] = useState('all');
+  const [timeRange, setTimeRange] = useState('recent');
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
   const pinchZoomRef = useRef(null);
