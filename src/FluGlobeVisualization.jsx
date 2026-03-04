@@ -7,7 +7,6 @@ const FluGlobeVisualization = () => {
   const MIN_ZOOM_LEVEL = 1;
   const MAX_ZOOM_LEVEL = 3.25;
   const LIVE_DATA_CACHE_KEY = 'fluglobe-live-data-v1';
-  const LIVE_DATA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
   const [rotation, setRotation] = useState([0, -20, 0]);
   const [isDragging, setIsDragging] = useState(false);
@@ -37,7 +36,7 @@ const FluGlobeVisualization = () => {
   const [virusFilter, setVirusFilter] = useState('all');
   const [hostFilter, setHostFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [timeRange, setTimeRange] = useState('all');
+  const [timeRange, setTimeRange] = useState('recent');
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
   const [showSeverityHelp, setShowSeverityHelp] = useState(false);
@@ -98,8 +97,10 @@ const FluGlobeVisualization = () => {
   };
 
   const loadLiveData = useCallback(async (forceRefresh = false) => {
-    setIsRefreshingData(true);
-    setDataError('');
+    if (forceRefresh) {
+      setIsRefreshingData(true);
+      setDataError('');
+    }
 
     let cached = null;
     try {
@@ -109,17 +110,18 @@ const FluGlobeVisualization = () => {
       cached = null;
     }
 
-    if (!forceRefresh && cached?.savedAt && Array.isArray(cached?.outbreaks)) {
-      const age = Date.now() - cached.savedAt;
-      if (age < LIVE_DATA_CACHE_TTL_MS) {
-        setLiveOutbreakData(cached.outbreaks);
-        setLiveStats(cached.stats || null);
-        setDataUpdatedAt(cached.generatedAt || null);
-        setDataWarnings(cached.warnings || []);
-        setIsUsingFallbackData(false);
-        setIsRefreshingData(false);
-        return;
-      }
+    const hasCachedOutbreaks = Array.isArray(cached?.outbreaks) && cached.outbreaks.length > 0;
+    if (hasCachedOutbreaks) {
+      setLiveOutbreakData(cached.outbreaks);
+      setLiveStats(cached.stats || null);
+      setDataUpdatedAt(cached.generatedAt || null);
+      setDataWarnings(cached.warnings || []);
+      setIsUsingFallbackData(false);
+    }
+
+    // Initial page load should never auto-refresh from the network.
+    if (!forceRefresh) {
+      return;
     }
 
     try {
@@ -155,7 +157,7 @@ const FluGlobeVisualization = () => {
         // Ignore local storage write errors.
       }
     } catch (error) {
-      if (cached?.outbreaks?.length) {
+      if (hasCachedOutbreaks) {
         setLiveOutbreakData(cached.outbreaks);
         setLiveStats(cached.stats || null);
         setDataUpdatedAt(cached.generatedAt || null);
