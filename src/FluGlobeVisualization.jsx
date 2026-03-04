@@ -605,14 +605,12 @@ const FluGlobeVisualization = () => {
   };
 
   const updateZoomLevel = (nextZoom) => {
+    if (mapProjectionMode !== 'mercator') return;
+
     const clamped = clampZoom(nextZoom);
     setZoomLevel(clamped);
-    if (mapProjectionMode === 'mercator') {
-      setMapPan((prev) => clampMercatorPan(prev, clamped));
-    }
-    if (clamped > 1.01 || mapProjectionMode !== 'globe') {
-      setAutoRotate(false);
-    }
+    setMapPan((prev) => clampMercatorPan(prev, clamped));
+    if (clamped > 1.01) setAutoRotate(false);
   };
 
   const getRelativePoint = (clientX, clientY, element) => {
@@ -627,6 +625,8 @@ const FluGlobeVisualization = () => {
   };
 
   const handleWheel = (e) => {
+    if (mapProjectionMode !== 'mercator') return;
+
     e.preventDefault();
     const factor = Math.exp(-e.deltaY * 0.0016);
     updateZoomLevel(zoomLevel * factor);
@@ -634,6 +634,8 @@ const FluGlobeVisualization = () => {
 
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
+      if (mapProjectionMode !== 'mercator') return;
+
       const distance = getTouchDistance(e.touches[0], e.touches[1]);
       pinchZoomRef.current = {
         startDistance: distance,
@@ -735,7 +737,8 @@ const FluGlobeVisualization = () => {
         setAutoRotate(false);
       } else {
         setMapPan([0, 0]);
-        if (zoomLevel <= 1.01) setAutoRotate(true);
+        setZoomLevel(1);
+        setAutoRotate(true);
       }
       setIsProjectionSwitching(false);
     };
@@ -847,6 +850,7 @@ const FluGlobeVisualization = () => {
   const isZoomedIn = zoomLevel > 1.01;
   const isMercatorView = mapProjectionMode === 'mercator';
   const spinDisabled = isMercatorView || isZoomedIn;
+  const zoomDisabled = !isMercatorView || isProjectionSwitching;
   const formattedUpdatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : null;
@@ -1499,22 +1503,22 @@ const FluGlobeVisualization = () => {
             </button>
             <button
               onClick={() => updateZoomLevel(zoomLevel / 1.25)}
-              disabled={isProjectionSwitching}
+              disabled={zoomDisabled}
               style={{
                 ...btnStyle(false),
-                opacity: isProjectionSwitching ? 0.45 : 1,
-                cursor: isProjectionSwitching ? 'not-allowed' : 'pointer'
+                opacity: zoomDisabled ? 0.45 : 1,
+                cursor: zoomDisabled ? 'not-allowed' : 'pointer'
               }}
             >
               －
             </button>
             <button
               onClick={() => updateZoomLevel(zoomLevel * 1.25)}
-              disabled={isProjectionSwitching}
+              disabled={zoomDisabled}
               style={{
                 ...btnStyle(false),
-                opacity: isProjectionSwitching ? 0.45 : 1,
-                cursor: isProjectionSwitching ? 'not-allowed' : 'pointer'
+                opacity: zoomDisabled ? 0.45 : 1,
+                cursor: zoomDisabled ? 'not-allowed' : 'pointer'
               }}
             >
               ＋
@@ -1686,7 +1690,9 @@ const FluGlobeVisualization = () => {
           >
             <span style={{ color: '#d1d9e6' }}>{isMercatorView ? '🖱️ Drag to pan' : '🖱️ Drag to rotate'}</span>
             <span style={{ color: '#5f6e82' }}>•</span>
-            <span style={{ color: '#d1d9e6' }}>Wheel/pinch to zoom</span>
+            <span style={{ color: '#d1d9e6' }}>
+              {isMercatorView ? 'Wheel/pinch to zoom' : 'Switch to Mercator to zoom'}
+            </span>
             <span style={{ color: '#5f6e82' }}>•</span>
             <span>Data: USDA + OWID (WHO human case feed), cached up to 12h</span>
             <span style={{ color: '#5f6e82' }}>•</span>
