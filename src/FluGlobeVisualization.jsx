@@ -27,7 +27,6 @@ const FluGlobeVisualization = () => {
   const [liveOutbreakData, setLiveOutbreakData] = useState([]);
   const [dataUpdatedAt, setDataUpdatedAt] = useState(null);
   const [dataWarnings, setDataWarnings] = useState([]);
-  const [liveStats, setLiveStats] = useState(null);
   const [dataError, setDataError] = useState('');
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [isUsingFallbackData, setIsUsingFallbackData] = useState(true);
@@ -36,7 +35,7 @@ const FluGlobeVisualization = () => {
   const [virusFilter, setVirusFilter] = useState('all');
   const [hostFilter, setHostFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
-  const [timeRange, setTimeRange] = useState('recent');
+  const [timeRange, setTimeRange] = useState('all');
   const [outbreakView, setOutbreakView] = useState('location');
   const [showLabels, setShowLabels] = useState(false);
   const [showSeverityHelp, setShowSeverityHelp] = useState(false);
@@ -113,7 +112,6 @@ const FluGlobeVisualization = () => {
     const hasCachedOutbreaks = Array.isArray(cached?.outbreaks) && cached.outbreaks.length > 0;
     if (hasCachedOutbreaks) {
       setLiveOutbreakData(cached.outbreaks);
-      setLiveStats(cached.stats || null);
       setDataUpdatedAt(cached.generatedAt || null);
       setDataWarnings(cached.warnings || []);
       setIsUsingFallbackData(false);
@@ -137,7 +135,6 @@ const FluGlobeVisualization = () => {
       }
 
       setLiveOutbreakData(payload.outbreaks);
-      setLiveStats(payload.stats || null);
       setDataUpdatedAt(payload.generatedAt || null);
       setDataWarnings(payload.warnings || []);
       setIsUsingFallbackData(false);
@@ -159,7 +156,6 @@ const FluGlobeVisualization = () => {
     } catch (error) {
       if (hasCachedOutbreaks) {
         setLiveOutbreakData(cached.outbreaks);
-        setLiveStats(cached.stats || null);
         setDataUpdatedAt(cached.generatedAt || null);
         setDataWarnings([
           ...new Set([...(cached.warnings || []), 'Using last cached live data due to refresh failure.'])
@@ -167,7 +163,6 @@ const FluGlobeVisualization = () => {
         setIsUsingFallbackData(false);
       } else {
         setLiveOutbreakData([]);
-        setLiveStats(null);
         setDataUpdatedAt(null);
         setDataWarnings([]);
         setIsUsingFallbackData(true);
@@ -289,7 +284,7 @@ const FluGlobeVisualization = () => {
   }, [virusFilter, virusOptions]);
 
   // Filter outbreaks based on user selections
-  const filteredOutbreaks = displayedOutbreakData.filter(o => {
+  const filteredOutbreaks = useMemo(() => displayedOutbreakData.filter(o => {
     if (virusFilter !== 'all' && o.virus !== virusFilter) return false;
     if (hostFilter !== 'all' && o.type !== hostFilter) return false;
     if (severityFilter !== 'all' && o.severity !== severityFilter) return false;
@@ -304,7 +299,7 @@ const FluGlobeVisualization = () => {
       if ((Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24) > 120) return false;
     }
     return true;
-  });
+  }), [displayedOutbreakData, hostFilter, severityFilter, timeRange, virusFilter]);
 
   const aggregatedOutbreaks = useMemo(() => {
     const groups = new Map();
@@ -391,23 +386,23 @@ const FluGlobeVisualization = () => {
   }, [outbreakView, filteredOutbreaks.length]);
 
   const stats = useMemo(() => {
-    if (liveStats) return liveStats;
-
-    const totalCases = displayedOutbreakData.reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
+    const totalCases = filteredOutbreaks.reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
     const countriesCount = new Set(
-      displayedOutbreakData.map((row) => (row.country?.startsWith('USA - ') ? 'USA' : row.country))
+      filteredOutbreaks
+        .map((row) => (row.country?.startsWith('USA - ') ? 'USA' : row.country))
+        .filter(Boolean)
     ).size;
 
-    const usLivestockCases = displayedOutbreakData
+    const usLivestockCases = filteredOutbreaks
       .filter((row) => row.country?.startsWith('USA - ') && (row.type === 'poultry' || row.type === 'dairy'))
       .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
 
-    const humanCases = displayedOutbreakData
+    const humanCases = filteredOutbreaks
       .filter((row) => row.type === 'human')
       .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
 
     return { totalCases, countriesCount, usLivestockCases, humanCases };
-  }, [displayedOutbreakData, liveStats]);
+  }, [filteredOutbreaks]);
 
   // Flyways
   const flyways = [
