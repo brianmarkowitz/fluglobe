@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test live data handler
+        run: |
+          node --input-type=module <<'EOF'
+          import handler from './api/flu-data.js';
+
+          const req = {
+            method: 'GET',
+            query: { days: '45', maxPoints: '50', force: '1' }
+          };
+
+          let statusCode = 200;
+          let body = null;
+          const res = {
+            setHeader() {},
+            status(code) {
+              statusCode = code;
+              return this;
+            },
+            json(payload) {
+              body = payload;
+            },
+            end() {}
+          };
+
+          await handler(req, res);
+
+          if (statusCode !== 200) {
+            throw new Error(`Expected status 200, received ${statusCode}`);
+          }
+
+          if (!Array.isArray(body?.outbreaks) || body.outbreaks.length === 0) {
+            throw new Error('Live data handler returned no outbreaks');
+          }
+          EOF
