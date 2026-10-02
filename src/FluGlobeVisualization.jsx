@@ -1,5 +1,40 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as d3 from 'd3';
+import OutbreakExplorer from './OutbreakExplorer.jsx';
+import { matchesSearch } from './explorer.js';
+
+  // Enhanced outbreak data with virus strains
+  const outbreakData = [
+    { id: 1, lat: 52, lng: -1, country: 'United Kingdom', cases: 156, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
+    { id: 2, lat: 52, lng: 5, country: 'Netherlands', cases: 89, date: '2024-12', month: 12, severity: 'high', type: 'wild', virus: 'H5N1' },
+    { id: 3, lat: 51, lng: 10, country: 'Germany', cases: 234, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
+    { id: 4, lat: 47, lng: 2, country: 'France', cases: 178, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
+    { id: 5, lat: 52, lng: 20, country: 'Poland', cases: 145, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N5' },
+    { id: 6, lat: 47, lng: 19, country: 'Hungary', cases: 67, date: '2024-10', month: 10, severity: 'medium', type: 'poultry', virus: 'H5N1' },
+    { id: 7, lat: 42, lng: 12, country: 'Italy', cases: 98, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
+    { id: 8, lat: 39, lng: -98, country: 'USA Central', cases: 892, date: '2024-12', month: 12, severity: 'high', type: 'dairy', virus: 'H5N1' },
+    { id: 9, lat: 45, lng: -93, country: 'USA Midwest', cases: 456, date: '2024-11', month: 11, severity: 'high', type: 'poultry', virus: 'H5N1' },
+    { id: 10, lat: 36, lng: -119, country: 'USA California', cases: 234, date: '2024-12', month: 12, severity: 'high', type: 'dairy', virus: 'H5N1' },
+    { id: 11, lat: 12, lng: 105, country: 'Cambodia', cases: 12, date: '2025-01', month: 1, severity: 'low', type: 'human', virus: 'H5N1' },
+    { id: 12, lat: 35, lng: 105, country: 'China', cases: 45, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H9N2' },
+    { id: 13, lat: 36, lng: 128, country: 'South Korea', cases: 89, date: '2024-11', month: 11, severity: 'medium', type: 'poultry', virus: 'H5N1' },
+    { id: 14, lat: 36, lng: 138, country: 'Japan', cases: 123, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H5N1' },
+    { id: 15, lat: -33, lng: -71, country: 'Chile', cases: 234, date: '2024-10', month: 10, severity: 'high', type: 'wild', virus: 'H5N1' },
+    { id: 16, lat: -10, lng: -76, country: 'Peru', cases: 567, date: '2024-09', month: 9, severity: 'high', type: 'wild', virus: 'H5N1' },
+    { id: 17, lat: -64, lng: -60, country: 'Antarctica', cases: 89, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
+    { id: 18, lat: 65, lng: -18, country: 'Iceland', cases: 34, date: '2024-12', month: 12, severity: 'low', type: 'wild', virus: 'H5N1' },
+    { id: 19, lat: 62, lng: 10, country: 'Norway', cases: 56, date: '2024-12', month: 12, severity: 'medium', type: 'wild', virus: 'H5N5' },
+    { id: 20, lat: -29, lng: 24, country: 'South Africa', cases: 78, date: '2024-08', month: 8, severity: 'medium', type: 'wild', virus: 'H5N1' },
+    { id: 21, lat: 56, lng: 38, country: 'Russia', cases: 112, date: '2024-10', month: 10, severity: 'medium', type: 'wild', virus: 'H5N1' },
+    { id: 22, lat: -2, lng: 118, country: 'Indonesia', cases: 34, date: '2024-11', month: 11, severity: 'low', type: 'poultry', virus: 'H5N1' },
+    { id: 23, lat: 15, lng: 101, country: 'Thailand', cases: 23, date: '2024-10', month: 10, severity: 'low', type: 'poultry', virus: 'H5N1' },
+    { id: 24, lat: 31, lng: 35, country: 'Israel', cases: 67, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H5N1' },
+    { id: 25, lat: 30, lng: 120, country: 'China East', cases: 28, date: '2024-11', month: 11, severity: 'low', type: 'human', virus: 'H9N2' },
+    { id: 26, lat: 23, lng: 113, country: 'China South', cases: 15, date: '2024-10', month: 10, severity: 'low', type: 'poultry', virus: 'H7N9' },
+    { id: 27, lat: 55, lng: -3, country: 'Scotland', cases: 42, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
+    { id: 28, lat: 60, lng: 25, country: 'Finland', cases: 31, date: '2024-12', month: 12, severity: 'low', type: 'wild', virus: 'H5N5' },
+  ];
+
 
 const FluGlobeVisualization = () => {
   const BASE_GLOBE_SCALE = 295;
@@ -16,7 +51,7 @@ const FluGlobeVisualization = () => {
   const [showMigration, setShowMigration] = useState(true);
   const [showOutbreaks, setShowOutbreaks] = useState(true);
   const [animationPhase, setAnimationPhase] = useState(0);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(() => !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [mapProjectionMode, setMapProjectionMode] = useState('globe');
   const [mapPan, setMapPan] = useState([0, 0]);
@@ -31,6 +66,13 @@ const FluGlobeVisualization = () => {
   const [isRefreshingData, setIsRefreshingData] = useState(false);
   const [isUsingFallbackData, setIsUsingFallbackData] = useState(true);
   
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const resetFilters = () => {
+    setSearchQuery(''); setVirusFilter('all'); setHostFilter('all');
+    setSeverityFilter('all'); setTimeRange('all'); setSelectedRecord(null);
+  };
+
   // New filter states
   const [virusFilter, setVirusFilter] = useState('all');
   const [hostFilter, setHostFilter] = useState('all');
@@ -131,7 +173,8 @@ const FluGlobeVisualization = () => {
 
       const payload = await response.json();
       if (!Array.isArray(payload?.outbreaks) || payload.outbreaks.length === 0) {
-        throw new Error('Live data endpoint returned no rows');
+        const details = Array.isArray(payload?.warnings) ? payload.warnings.join(' ') : '';
+        throw new Error(`No source records returned for the requested time window.${details ? ` ${details}` : ''}`);
       }
 
       setLiveOutbreakData(payload.outbreaks);
@@ -234,37 +277,6 @@ const FluGlobeVisualization = () => {
     return { type: 'FeatureCollection', features };
   };
 
-  // Enhanced outbreak data with virus strains
-  const outbreakData = [
-    { id: 1, lat: 52, lng: -1, country: 'United Kingdom', cases: 156, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
-    { id: 2, lat: 52, lng: 5, country: 'Netherlands', cases: 89, date: '2024-12', month: 12, severity: 'high', type: 'wild', virus: 'H5N1' },
-    { id: 3, lat: 51, lng: 10, country: 'Germany', cases: 234, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
-    { id: 4, lat: 47, lng: 2, country: 'France', cases: 178, date: '2024-12', month: 12, severity: 'high', type: 'poultry', virus: 'H5N1' },
-    { id: 5, lat: 52, lng: 20, country: 'Poland', cases: 145, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N5' },
-    { id: 6, lat: 47, lng: 19, country: 'Hungary', cases: 67, date: '2024-10', month: 10, severity: 'medium', type: 'poultry', virus: 'H5N1' },
-    { id: 7, lat: 42, lng: 12, country: 'Italy', cases: 98, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
-    { id: 8, lat: 39, lng: -98, country: 'USA Central', cases: 892, date: '2024-12', month: 12, severity: 'high', type: 'dairy', virus: 'H5N1' },
-    { id: 9, lat: 45, lng: -93, country: 'USA Midwest', cases: 456, date: '2024-11', month: 11, severity: 'high', type: 'poultry', virus: 'H5N1' },
-    { id: 10, lat: 36, lng: -119, country: 'USA California', cases: 234, date: '2024-12', month: 12, severity: 'high', type: 'dairy', virus: 'H5N1' },
-    { id: 11, lat: 12, lng: 105, country: 'Cambodia', cases: 12, date: '2025-01', month: 1, severity: 'low', type: 'human', virus: 'H5N1' },
-    { id: 12, lat: 35, lng: 105, country: 'China', cases: 45, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H9N2' },
-    { id: 13, lat: 36, lng: 128, country: 'South Korea', cases: 89, date: '2024-11', month: 11, severity: 'medium', type: 'poultry', virus: 'H5N1' },
-    { id: 14, lat: 36, lng: 138, country: 'Japan', cases: 123, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H5N1' },
-    { id: 15, lat: -33, lng: -71, country: 'Chile', cases: 234, date: '2024-10', month: 10, severity: 'high', type: 'wild', virus: 'H5N1' },
-    { id: 16, lat: -10, lng: -76, country: 'Peru', cases: 567, date: '2024-09', month: 9, severity: 'high', type: 'wild', virus: 'H5N1' },
-    { id: 17, lat: -64, lng: -60, country: 'Antarctica', cases: 89, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
-    { id: 18, lat: 65, lng: -18, country: 'Iceland', cases: 34, date: '2024-12', month: 12, severity: 'low', type: 'wild', virus: 'H5N1' },
-    { id: 19, lat: 62, lng: 10, country: 'Norway', cases: 56, date: '2024-12', month: 12, severity: 'medium', type: 'wild', virus: 'H5N5' },
-    { id: 20, lat: -29, lng: 24, country: 'South Africa', cases: 78, date: '2024-08', month: 8, severity: 'medium', type: 'wild', virus: 'H5N1' },
-    { id: 21, lat: 56, lng: 38, country: 'Russia', cases: 112, date: '2024-10', month: 10, severity: 'medium', type: 'wild', virus: 'H5N1' },
-    { id: 22, lat: -2, lng: 118, country: 'Indonesia', cases: 34, date: '2024-11', month: 11, severity: 'low', type: 'poultry', virus: 'H5N1' },
-    { id: 23, lat: 15, lng: 101, country: 'Thailand', cases: 23, date: '2024-10', month: 10, severity: 'low', type: 'poultry', virus: 'H5N1' },
-    { id: 24, lat: 31, lng: 35, country: 'Israel', cases: 67, date: '2024-12', month: 12, severity: 'medium', type: 'poultry', virus: 'H5N1' },
-    { id: 25, lat: 30, lng: 120, country: 'China East', cases: 28, date: '2024-11', month: 11, severity: 'low', type: 'human', virus: 'H9N2' },
-    { id: 26, lat: 23, lng: 113, country: 'China South', cases: 15, date: '2024-10', month: 10, severity: 'low', type: 'poultry', virus: 'H7N9' },
-    { id: 27, lat: 55, lng: -3, country: 'Scotland', cases: 42, date: '2024-11', month: 11, severity: 'medium', type: 'wild', virus: 'H5N1' },
-    { id: 28, lat: 60, lng: 25, country: 'Finland', cases: 31, date: '2024-12', month: 12, severity: 'low', type: 'wild', virus: 'H5N5' },
-  ];
 
   const displayedOutbreakData = liveOutbreakData.length > 0 ? liveOutbreakData : outbreakData;
 
@@ -285,6 +297,7 @@ const FluGlobeVisualization = () => {
 
   // Filter outbreaks based on user selections
   const filteredOutbreaks = useMemo(() => displayedOutbreakData.filter(o => {
+    if (!matchesSearch(o, searchQuery)) return false;
     if (virusFilter !== 'all' && o.virus !== virusFilter) return false;
     if (hostFilter !== 'all' && o.type !== hostFilter) return false;
     if (severityFilter !== 'all' && o.severity !== severityFilter) return false;
@@ -299,7 +312,9 @@ const FluGlobeVisualization = () => {
       if ((Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24) > 120) return false;
     }
     return true;
-  }), [displayedOutbreakData, hostFilter, severityFilter, timeRange, virusFilter]);
+  }), [displayedOutbreakData, hostFilter, severityFilter, timeRange, virusFilter, searchQuery]);
+
+  useEffect(() => { setSelectedRecord(null); }, [searchQuery, virusFilter, hostFilter, severityFilter, timeRange, liveOutbreakData]);
 
   const aggregatedOutbreaks = useMemo(() => {
     const groups = new Map();
@@ -385,25 +400,6 @@ const FluGlobeVisualization = () => {
     setHoveredOutbreak(null);
   }, [outbreakView, filteredOutbreaks.length]);
 
-  const stats = useMemo(() => {
-    const totalCases = filteredOutbreaks.reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
-    const countriesCount = new Set(
-      filteredOutbreaks
-        .map((row) => (row.country?.startsWith('USA - ') ? 'USA' : row.country))
-        .filter(Boolean)
-    ).size;
-
-    const usLivestockCases = filteredOutbreaks
-      .filter((row) => row.country?.startsWith('USA - ') && (row.type === 'poultry' || row.type === 'dairy'))
-      .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
-
-    const humanCases = filteredOutbreaks
-      .filter((row) => row.type === 'human')
-      .reduce((sum, row) => sum + (Number(row.cases) || 0), 0);
-
-    return { totalCases, countriesCount, usLivestockCases, humanCases };
-  }, [filteredOutbreaks]);
-
   // Flyways
   const flyways = [
     { name: 'Atlantic Americas', color: '#00d4ff', description: 'Arctic to South America', species: 'Waterfowl, Shorebirds', birds: '350+ species', points: [[72, -65], [60, -68], [48, -72], [38, -76], [28, -80], [18, -78], [8, -72], [-5, -62], [-20, -55], [-38, -62]] },
@@ -418,6 +414,7 @@ const FluGlobeVisualization = () => {
 
   // Animation
   useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches && !autoRotate) return;
     const interval = setInterval(() => {
       setAnimationPhase(prev => (prev + 1) % 1000);
       if (mapProjectionMode === 'globe' && autoRotate && !isDragging) {
@@ -807,13 +804,13 @@ const FluGlobeVisualization = () => {
 
   // Control button style
   const btnStyle = (active) => ({
-    padding: '3px 8px',
+    padding: '7px 10px',
     background: active ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.03)',
     border: `1px solid ${active ? '#00d4ff' : '#333'}`,
     borderRadius: '4px',
     color: active ? '#00d4ff' : '#888',
     cursor: 'pointer',
-    fontSize: '0.56rem',
+    fontSize: '0.75rem',
     fontWeight: '500',
     transition: 'all 0.15s'
   });
@@ -837,11 +834,9 @@ const FluGlobeVisualization = () => {
 
   const liveWarningSummary =
     dataWarnings.length > 0
-      ? 'Some source feeds are temporarily unavailable. Showing available live data.'
+      ? dataWarnings.join(' ')
       : '';
 
-  const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
-  const standardNumber = new Intl.NumberFormat('en-US');
   const isZoomedIn = zoomLevel > 1.01;
   const isMercatorView = mapProjectionMode === 'mercator';
   const spinDisabled = isMercatorView || isZoomedIn;
@@ -851,7 +846,7 @@ const FluGlobeVisualization = () => {
     : null;
 
   return (
-    <div style={{
+    <div className="app-shell" style={{
       minHeight: '100vh',
       background: 'linear-gradient(180deg, #080c15 0%, #0d1320 50%, #060810 100%)',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -859,29 +854,20 @@ const FluGlobeVisualization = () => {
       padding: '16px',
       boxSizing: 'border-box'
     }}>
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-        <h1 style={{
-          fontSize: 'clamp(1.2rem, 2.5vw, 1.8rem)',
-          fontWeight: '400',
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          margin: '0 0 4px 0',
-          background: 'linear-gradient(90deg, #00d4ff, #a855f7, #ff6b6b)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent'
-        }}>
-          Global Avian Influenza Tracker
-        </h1>
-        <p style={{ fontSize: '0.68rem', color: '#6b7280', letterSpacing: '0.06em', margin: 0 }}>
-          HPAI Outbreaks & Migratory Bird Flyways
-          {formattedUpdatedAt && ` • Updated ${formattedUpdatedAt}`}
-          {isUsingFallbackData && ' • Fallback snapshot'}
-        </p>
-      </div>
+      <header className="app-header">
+        <div className="brand"><span className="brand-mark" aria-hidden="true">◎</span><div><h1>FluGlobe<span> / ATLAS</span></h1><p>Avian influenza & migratory flyways</p></div></div>
+        <div className={`data-status ${isUsingFallbackData ? 'sample' : ''}`}><strong>{isUsingFallbackData ? '◉ Sample dataset' : '◉ Downloaded source data'}</strong><span>{isUsingFallbackData ? 'Aug 2024 – Jan 2025 · illustrative records' : (formattedUpdatedAt ? `Fetched ${formattedUpdatedAt}` : 'Cached records · fetch time unavailable')}</span></div>
+      </header>
+      <section className="intro"><div><span className="eyebrow">A GLOBAL PERSPECTIVE</span><h2>Follow the patterns.<br /><span>Explore the connections.</span></h2></div><p>Explore reported detections alongside migratory flyways. Search a location, narrow the data, and take a closer look.</p></section>
+      <section className="metric-grid" aria-label="Filtered dataset summary">
+        <div><span>Matching records</span><strong>{filteredOutbreaks.length.toLocaleString()}</strong><small>of {displayedOutbreakData.length.toLocaleString()} loaded records</small></div>
+        <div><span>Mapped locations</span><strong>{aggregatedOutbreaks.length.toLocaleString()}</strong><small>distinct coordinate groups</small></div>
+        <div><span>Virus strains</span><strong>{new Set(filteredOutbreaks.map(row => row.virus)).size}</strong><small>in the current selection</small></div>
+        <div className="metric-note"><span>DATA CONTEXT</span><p>{isUsingFallbackData ? 'You’re exploring sample records. Refresh to request source data.' : 'Loaded records may represent a subset of source data.'}</p><small>Flyways provide context, not evidence of transmission.</small></div>
+      </section>
 
       {/* Filter Controls */}
-      <div style={{
+      <div className="filter-panel" style={{
         maxWidth: '1200px',
         margin: '0 auto 8px',
         padding: '9px 12px',
@@ -890,10 +876,11 @@ const FluGlobeVisualization = () => {
         border: '1px solid rgba(100,150,200,0.1)',
         backdropFilter: 'blur(8px)'
       }}>
+        <div className="search-bar"><label htmlFor="record-search">Search the atlas</label><input id="record-search" type="search" placeholder="Location, strain, host, or source…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /><button onClick={resetFilters}>Clear filters</button></div>
         <div style={{ display: 'flex', flexWrap: 'wrap', rowGap: '8px', columnGap: '10px', alignItems: 'center' }}>
           {/* Virus Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Virus:</span>
+            <span style={{ fontSize: '0.72rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Virus:</span>
             <div style={{ display: 'flex', gap: '3px' }}>
               {virusOptions.map(v => (
                 <button key={v} onClick={() => setVirusFilter(v)} style={{
@@ -909,10 +896,10 @@ const FluGlobeVisualization = () => {
 
           {/* Host Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Host:</span>
+            <span style={{ fontSize: '0.72rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Host:</span>
             <div style={{ display: 'flex', gap: '3px' }}>
-              {[['all', 'All'], ['poultry', '🐔'], ['wild', '🦆'], ['dairy', '🐄'], ['human', '👤']].map(([v, label]) => (
-                <button key={v} onClick={() => setHostFilter(v)} style={btnStyle(hostFilter === v)}>
+              {[['all', 'All'], ['poultry', 'Poultry'], ['wild', 'Wild'], ['dairy', 'Dairy'], ['human', 'Human']].map(([v, label]) => (
+                <button key={v} aria-label={`Host: ${v}`} aria-pressed={hostFilter === v} onClick={() => setHostFilter(v)} style={btnStyle(hostFilter === v)}>
                   {label}
                 </button>
               ))}
@@ -926,7 +913,7 @@ const FluGlobeVisualization = () => {
               onMouseEnter={() => setShowSeverityHelp(true)}
               onMouseLeave={() => setShowSeverityHelp(false)}
             >
-              <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
+              <span style={{ fontSize: '0.72rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Severity:</span>
               <button
                 type="button"
                 aria-label="Severity threshold help"
@@ -939,7 +926,7 @@ const FluGlobeVisualization = () => {
                   border: '1px solid rgba(100,150,200,0.3)',
                   background: 'rgba(15,26,43,0.9)',
                   color: '#8ac5ff',
-                  fontSize: '0.52rem',
+                  fontSize: '0.72rem',
                   fontWeight: '700',
                   lineHeight: 1,
                   display: 'inline-flex',
@@ -968,18 +955,18 @@ const FluGlobeVisualization = () => {
                     zIndex: 30
                   }}
                 >
-                  <div style={{ fontSize: '0.49rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
                     Event severity is a case-count heuristic by host type:
                   </div>
-                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', lineHeight: 1.35 }}>
                     <span style={{ color: '#ff2d55' }}>High</span>:
                     {' '}Poultry/Dairy 5000+, Human 10+, Wild 20+
                   </div>
-                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', lineHeight: 1.35 }}>
                     <span style={{ color: '#ff9500' }}>Med</span>:
                     {' '}Poultry/Dairy 250-4999, Human 2-9, Wild 5-19
                   </div>
-                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', lineHeight: 1.35 }}>
                     <span style={{ color: '#ffcc00' }}>Low</span>:
                     {' '}below those ranges
                   </div>
@@ -1001,7 +988,7 @@ const FluGlobeVisualization = () => {
 
           {/* Time Range */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time:</span>
+            <span style={{ fontSize: '0.72rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time:</span>
             <div style={{ display: 'flex', gap: '3px' }}>
               {[['all', 'All'], ['q4', 'Last 120d'], ['recent', 'Last 45d']].map(([v, label]) => (
                 <button key={v} onClick={() => setTimeRange(v)} style={btnStyle(timeRange === v)}>
@@ -1018,7 +1005,7 @@ const FluGlobeVisualization = () => {
               onMouseEnter={() => setShowDisplayHelp(true)}
               onMouseLeave={() => setShowDisplayHelp(false)}
             >
-              <span style={{ fontSize: '0.54rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
+              <span style={{ fontSize: '0.72rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display:</span>
               <button
                 type="button"
                 aria-label="Display mode help"
@@ -1031,7 +1018,7 @@ const FluGlobeVisualization = () => {
                   border: '1px solid rgba(100,150,200,0.3)',
                   background: 'rgba(15,26,43,0.9)',
                   color: '#8ac5ff',
-                  fontSize: '0.52rem',
+                  fontSize: '0.72rem',
                   fontWeight: '700',
                   lineHeight: 1,
                   display: 'inline-flex',
@@ -1060,13 +1047,13 @@ const FluGlobeVisualization = () => {
                     zIndex: 30
                   }}
                 >
-                  <div style={{ fontSize: '0.49rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#d1d5db', marginBottom: '4px', lineHeight: 1.3 }}>
                     Grouping controls marker density and readability:
                   </div>
-                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', lineHeight: 1.35 }}>
                     <span style={{ color: '#00d4ff' }}>Grouped</span>: merges reports at the same map point into one marker.
                   </div>
-                  <div style={{ fontSize: '0.47rem', color: '#9ca3af', lineHeight: 1.35 }}>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', lineHeight: 1.35 }}>
                     <span style={{ color: '#00d4ff' }}>Individual</span>: shows each source report as its own marker.
                   </div>
                 </div>
@@ -1100,7 +1087,7 @@ const FluGlobeVisualization = () => {
         </div>
 
         {/* Active filters summary */}
-        <div style={{ marginTop: '5px', fontSize: '0.52rem', color: '#4b5563', lineHeight: 1.25 }}>
+        <div style={{ marginTop: '5px', fontSize: '0.72rem', color: '#4b5563', lineHeight: 1.25 }}>
           {outbreakMarkers.length} {outbreakView === 'location' ? 'grouped locations' : 'individual reports'}
           {' '}from {filteredOutbreaks.length} reports
           <span> • {outbreakView === 'location' ? 'Grouped view' : 'Individual view'}</span>
@@ -1111,19 +1098,19 @@ const FluGlobeVisualization = () => {
           {severityFilter !== 'all' && <span style={{ color: getSeverityColor(severityFilter) }}> • {severityFilter} severity</span>}
         </div>
         {dataError && (
-          <div style={{ marginTop: '3px', fontSize: '0.5rem', color: '#f59e0b', lineHeight: 1.2 }}>
+          <div style={{ marginTop: '3px', fontSize: '0.72rem', color: '#f59e0b', lineHeight: 1.2 }}>
             {dataError}
           </div>
         )}
         {dataWarnings.length > 0 && (
-          <div style={{ marginTop: '2px', fontSize: '0.49rem', color: '#6b7280', lineHeight: 1.2 }}>
+          <div style={{ marginTop: '2px', fontSize: '0.7rem', color: '#6b7280', lineHeight: 1.2 }}>
             {liveWarningSummary}
           </div>
         )}
       </div>
 
       {/* Main content */}
-      <div style={{
+      <div className="map-layout" style={{
         display: 'flex',
         gap: '16px',
         maxWidth: '1200px',
@@ -1132,7 +1119,8 @@ const FluGlobeVisualization = () => {
         justifyContent: 'center'
       }}>
         {/* Globe */}
-        <div style={{ position: 'relative' }}>
+        <div className="map-panel" id="atlas-map" style={{ position: 'relative' }}>
+          <div className="map-heading"><span className="eyebrow">GLOBAL ATLAS</span><span>{isMercatorView ? 'Mercator projection' : 'Orthographic projection'}</span></div>
           <div
             style={{
               pointerEvents: isProjectionSwitching ? 'none' : 'auto'
@@ -1143,8 +1131,8 @@ const FluGlobeVisualization = () => {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '620px',
-              height: '620px',
+              width: '100%',
+              height: '100%',
               background: 'radial-gradient(circle, rgba(0,150,200,0.06) 0%, transparent 55%)',
               borderRadius: '50%',
               opacity: Math.max(0, 1 - projectionMorph),
@@ -1153,8 +1141,11 @@ const FluGlobeVisualization = () => {
             }} />
 
             <svg
+              viewBox={`0 0 ${width} ${height}`}
               width={width}
               height={height}
+              role="img"
+              aria-label="Interactive map of filtered outbreak records and migration flyways"
               style={{ cursor: isDragging ? 'grabbing' : 'grab', display: 'block', touchAction: 'none' }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
@@ -1518,17 +1509,17 @@ const FluGlobeVisualization = () => {
             >
               ＋
             </button>
-            <button onClick={() => setShowMigration(!showMigration)} style={btnStyle(showMigration)}>
+            <button aria-label="Toggle migration flyways" aria-pressed={showMigration} onClick={() => setShowMigration(!showMigration)} style={btnStyle(showMigration)}>
               🦅
             </button>
-            <button onClick={() => setShowOutbreaks(!showOutbreaks)} style={btnStyle(showOutbreaks)}>
+            <button aria-label="Toggle outbreak markers" aria-pressed={showOutbreaks} onClick={() => setShowOutbreaks(!showOutbreaks)} style={btnStyle(showOutbreaks)}>
               ⬡
             </button>
           </div>
         </div>
 
         {/* Side Panel */}
-        <div style={{
+        <div className="side-panel" style={{
           flex: '0 0 240px',
           display: 'flex',
           flexDirection: 'column',
@@ -1536,6 +1527,7 @@ const FluGlobeVisualization = () => {
           maxHeight: '620px',
           overflowY: 'auto'
         }}>
+          {selectedRecord && <section className="record-detail" aria-label="Selected record"><div className="detail-heading"><span className="eyebrow">SELECTED RECORD</span><button aria-label="Close record details" onClick={() => setSelectedRecord(null)}>×</button></div><h3>{selectedRecord.country}</h3><p>{selectedRecord.virus} · {selectedRecord.type} · {selectedRecord.date}</p><strong>{Number(selectedRecord.cases || 0).toLocaleString()} reported count</strong><p>{selectedRecord.source || 'Sample dataset'}</p></section>}
           {/* Flyways Legend */}
           <div style={{
             background: 'rgba(12,20,32,0.7)',
@@ -1544,13 +1536,16 @@ const FluGlobeVisualization = () => {
             padding: '10px',
             backdropFilter: 'blur(8px)'
           }}>
-            <h3 style={{ fontSize: '0.55rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
+            <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
               Migratory Flyways
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
               {flyways.map((flyway, idx) => (
                 <div
                   key={idx}
+                  tabIndex={0}
+                  onFocus={() => setSelectedFlyway(idx)}
+                  onBlur={() => setSelectedFlyway(null)}
                   onMouseEnter={() => setSelectedFlyway(idx)}
                   onMouseLeave={() => setSelectedFlyway(null)}
                   style={{
@@ -1562,8 +1557,8 @@ const FluGlobeVisualization = () => {
                     transition: 'background 0.15s'
                   }}
                 >
-                  <div style={{ fontSize: '0.65rem', fontWeight: '600', color: flyway.color }}>{flyway.name}</div>
-                  <div style={{ fontSize: '0.5rem', color: '#6b7280' }}>{flyway.description}</div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '600', color: flyway.color }}>{flyway.name}</div>
+                  <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>{flyway.description}</div>
                 </div>
               ))}
             </div>
@@ -1577,55 +1572,16 @@ const FluGlobeVisualization = () => {
             padding: '10px',
             backdropFilter: 'blur(8px)'
           }}>
-            <h3 style={{ fontSize: '0.55rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
+            <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
               Virus Strains
             </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {[['H5N1', 'Primary strain'], ['H5N5', 'Europe variant'], ['H9N2', 'Asia endemic'], ['H7N9', 'China origin']].map(([v, desc]) => (
                 <div key={v} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: getVirusColor(v), boxShadow: `0 0 4px ${getVirusColor(v)}50` }} />
-                  <span style={{ fontSize: '0.55rem', color: getVirusColor(v), fontWeight: '600' }}>{v}</span>
+                  <span style={{ fontSize: '0.75rem', color: getVirusColor(v), fontWeight: '600' }}>{v}</span>
                 </div>
               ))}
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div style={{
-            background: 'rgba(12,20,32,0.7)',
-            borderRadius: '8px',
-            border: '1px solid rgba(100,150,200,0.1)',
-            padding: '10px',
-            backdropFilter: 'blur(8px)'
-          }}>
-            <h3 style={{ fontSize: '0.55rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
-              Statistics
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#ff2d55' }}>
-                  {compactNumber.format(stats.totalCases || 0)}
-                </div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Total Cases</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#00d4ff' }}>
-                  {standardNumber.format(stats.countriesCount || 0)}
-                </div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Countries</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#f59e0b' }}>
-                  {compactNumber.format(stats.usLivestockCases || 0)}
-                </div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>US Livestock</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '1.1rem', fontWeight: '300', color: '#a855f7' }}>
-                  {standardNumber.format(stats.humanCases || 0)}
-                </div>
-                <div style={{ fontSize: '0.48rem', color: '#6b7280' }}>Human Cases</div>
-              </div>
             </div>
           </div>
 
@@ -1637,26 +1593,33 @@ const FluGlobeVisualization = () => {
             padding: '10px',
             backdropFilter: 'blur(8px)'
           }}>
-            <h3 style={{ fontSize: '0.55rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
+            <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#6b7280', margin: '0 0 6px 0' }}>
               Severity / Hosts
             </h3>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
               {[['HIGH', '#ff2d55'], ['MED', '#ff9500'], ['LOW', '#ffcc00']].map(([l, c]) => (
                 <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: c }} />
-                  <span style={{ fontSize: '0.5rem', color: c }}>{l}</span>
+                  <span style={{ fontSize: '0.72rem', color: c }}>{l}</span>
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[['🐔', 'Poultry'], ['🦆', 'Wild'], ['🐄', 'Dairy'], ['👤', 'Human']].map(([i, l]) => (
-                <span key={l} style={{ fontSize: '0.5rem', color: '#6b7280' }}>{i} {l}</span>
+                <span key={l} style={{ fontSize: '0.72rem', color: '#6b7280' }}>{i} {l}</span>
               ))}
             </div>
           </div>
         </div>
       </div>
 
+      <OutbreakExplorer rows={filteredOutbreaks} sample={isUsingFallbackData} selected={selectedRecord} onReset={resetFilters} onFocus={row => {
+        if (projectionAnimationFrameRef.current) cancelAnimationFrame(projectionAnimationFrameRef.current);
+        setIsProjectionSwitching(false); setMapProjectionMode('globe'); setProjectionMorph(0);
+        setRotation([-Number(row.lng), -Number(row.lat), 0]); setZoomLevel(1); setMapPan([0, 0]);
+        setAutoRotate(false); setShowOutbreaks(true); setSelectedRecord(row); setHoveredOutbreak(row);
+        document.getElementById('atlas-map')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+      }} />
       {/* Footer */}
       <div style={{ textAlign: 'center', marginTop: '10px', padding: '0 10px 12px' }}>
         <div
@@ -1689,7 +1652,7 @@ const FluGlobeVisualization = () => {
               {isMercatorView ? 'Wheel/pinch to zoom' : 'Switch to Mercator to zoom'}
             </span>
             <span style={{ color: '#5f6e82' }}>•</span>
-            <span>Data: USDA + OWID (WHO human case feed), cached up to 12h</span>
+            <span>{isUsingFallbackData ? 'Data: illustrative sample records' : 'Sources: USDA + OWID (WHO data) · cached up to 12h'}</span>
             <span style={{ color: '#5f6e82' }}>•</span>
             <span>Flyways: BirdLife International</span>
           </p>
